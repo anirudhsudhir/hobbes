@@ -1,15 +1,7 @@
-use std::process;
-
 use clap::{Arg, Command};
+use kvs::Result;
 
-fn main() {
-    if let Err(err) = parse_commands() {
-        eprintln!("error: {err}");
-        process::exit(1);
-    }
-}
-
-fn parse_commands() -> Result<(), &'static str> {
+fn main() -> Result<()> {
     let cmd = Command::new("kvs")
         .name(env!("CARGO_BIN_NAME"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -50,10 +42,10 @@ fn parse_commands() -> Result<(), &'static str> {
         )
         .get_matches();
 
-    match cmd.subcommand() {
-        Some((_, _)) => Err("unimplemented"),
-        _ => Err("no subcommands or arguments specified"),
-    }
+    // match cmd.subcommand() {
+    // Some((_, _)) => Err("unimplemented"),
+    // _ => Err("no subcommands or arguments specified"),
+    // }
 
-    // Ok(())
+    Ok(())
 }
