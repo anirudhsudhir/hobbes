@@ -1,12 +1,68 @@
 use clap::{Arg, Command};
-use kvs::Result;
+use kvs::{KvStore, KvsError, Result};
+use std::path::Path;
+
+const DB_PATH: &str = "./";
 
 fn main() -> Result<()> {
-    let cmd = Command::new("kvs")
+    let cmd = cli().get_matches();
+
+    match cmd.subcommand() {
+        Some(("get", sub_matches)) => {
+            let key = sub_matches
+                .get_one::<String>("get")
+                .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
+
+            let kv = KvStore::open(Path::new(DB_PATH))?;
+            if let Some(val) = kv.get(key.clone())? {
+                println!("{val}");
+            } else {
+                println!("Key not found");
+            }
+        }
+
+        Some(("set", sub_matches)) => {
+            let args: Vec<&String> = sub_matches
+                .get_many::<String>("set")
+                .into_iter()
+                .flatten()
+                .collect();
+
+            let mut kv = KvStore::open(Path::new(DB_PATH))?;
+            kv.set(args[0].clone(), args[1].clone())?;
+        }
+
+        Some(("rm", sub_matches)) => {
+            let key = sub_matches
+                .get_one::<String>("rm")
+                .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
+
+            let mut kv = KvStore::open(Path::new(DB_PATH))?;
+            match kv.remove(key.clone()) {
+                Ok(_) => {}
+                Err(err) => match err {
+                    KvsError::KeyNotFoundError => {
+                        println!("Key not found");
+                        std::process::exit(1);
+                        // return Err(err);
+                    }
+                    _ => return Err(err),
+                },
+            };
+        }
+        _ => eprintln!("Invalid command"),
+    }
+
+    Ok(())
+}
+
+fn cli() -> Command {
+    Command::new("kvs")
         .name(env!("CARGO_BIN_NAME"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .version(env!("CARGO_PKG_VERSION"))
+        .subcommand_required(true)
         .subcommand(
             Command::new("get")
                 .about("return the value associated with a key")
@@ -40,12 +96,4 @@ fn main() -> Result<()> {
                         .num_args(1),
                 ),
         )
-        .get_matches();
-
-    // match cmd.subcommand() {
-    // Some((_, _)) => Err("unimplemented"),
-    // _ => Err("no subcommands or arguments specified"),
-    // }
-
-    Ok(())
 }
