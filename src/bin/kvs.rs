@@ -13,7 +13,7 @@ fn main() -> Result<()> {
                 .get_one::<String>("get")
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
 
-            let kv = KvStore::open(Path::new(DB_PATH))?;
+            let mut kv = KvStore::open(Path::new(DB_PATH))?;
             if let Some(val) = kv.get(key.clone())? {
                 println!("{val}");
             } else {

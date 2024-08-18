@@ -2,22 +2,20 @@
 
 //! This crate is a simple in-memory key-value store
 
-// use flexbuffers::FlexbufferSerializer;
+use rmp_serde::{self, decode, encode};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Cursor, Read, Write};
-use std::path::{self, PathBuf};
+use std::io::{self, BufReader, Seek, SeekFrom, Write};
+use std::path;
 
 #[derive(Debug)]
 pub enum KvsError {
     IoError(io::Error),
-    // SerializationError(flexbuffers::SerializationError),
-    // DeserializationError(flexbuffers::DeserializationError),
-    SerializationError(bson::ser::Error),
-    DeserializationError(bson::de::Error),
+    SerializationError(encode::Error),
+    DeserializationError(decode::Error),
     MapError(String),
     KeyNotFoundError,
     CliError(String),
@@ -39,8 +37,8 @@ struct LogCommand {
 
 /// KvStore holds a HashMap that stores the key-value pairs
 pub struct KvStore {
-    mem_index: HashMap<String, String>,
-    db_path: PathBuf,
+    mem_index: HashMap<String, u64>,
+    db_handle: File,
 }
 
 impl fmt::Display for KvsError {
@@ -63,26 +61,14 @@ impl From<std::io::Error> for KvsError {
     }
 }
 
-// impl From<flexbuffers::SerializationError> for KvsError {
-//     fn from(value: flexbuffers::SerializationError) -> Self {
-//         KvsError::SerializationError(value)
-//     }
-// }
-//
-// impl From<flexbuffers::DeserializationError> for KvsError {
-//     fn from(value: flexbuffers::DeserializationError) -> Self {
-//         KvsError::DeserializationError(value)
-//     }
-// }
-
-impl From<bson::ser::Error> for KvsError {
-    fn from(value: bson::ser::Error) -> Self {
+impl From<encode::Error> for KvsError {
+    fn from(value: encode::Error) -> Self {
         KvsError::SerializationError(value)
     }
 }
 
-impl From<bson::de::Error> for KvsError {
-    fn from(value: bson::de::Error) -> Self {
+impl From<decode::Error> for KvsError {
+    fn from(value: decode::Error) -> Self {
         KvsError::DeserializationError(value)
     }
 }
@@ -90,41 +76,42 @@ impl From<bson::de::Error> for KvsError {
 impl KvStore {
     /// Create an instance of KvStore
     pub fn open(arg_path: &path::Path) -> Result<KvStore> {
-        let mut cmds: Vec<LogCommand> = Vec::new();
-
         let mut path = arg_path.to_path_buf();
         if path::Path::is_dir(arg_path) {
             path.push("store.db");
         }
 
         if !path::Path::exists(&path) {
-            File::create_new(&path)?;
+            let file = OpenOptions::new()
+                .create(true)
+                .read(true)
+                .append(true)
+                .open(&path)?;
 
             return Ok(KvStore {
                 mem_index: HashMap::new(),
-                db_path: path,
+                db_handle: file,
             });
         }
 
-        let mut file = File::open(&path)?;
-        let mut buf: Vec<u8> = Vec::new();
-        file.read_to_end(&mut buf)?;
-        let mut reader = Cursor::new(buf);
-
-        while let Ok(doc) = bson::Document::from_reader(&mut reader) {
-            cmds.push(bson::from_document(doc)?);
-        }
-
+        let db_writer = OpenOptions::new().read(true).append(true).open(&path)?;
         let mut kv = KvStore {
             mem_index: HashMap::new(),
-            db_path: path,
+            db_handle: db_writer,
         };
 
-        for cmd in cmds {
+        let file = File::open(&path)?;
+        let mut reader = BufReader::new(&file);
+        let mut offset = reader.stream_position()?;
+
+        while let Ok(decode_cmd) = decode::from_read(&mut reader) {
+            let cmd: LogCommand = decode_cmd;
             match cmd.operation {
-                OperationType::Set(key, value) => kv.mem_index.insert(key, value),
+                OperationType::Set(key, _) => kv.mem_index.insert(key, offset),
                 OperationType::Rm(key) => kv.mem_index.remove(&key),
             };
+
+            offset = reader.stream_position()?;
         }
 
         Ok(kv)
@@ -132,22 +119,14 @@ impl KvStore {
 
     /// Store a key-value pair
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let command = LogCommand {
+        let cmd = serialize_command(&LogCommand {
             operation: OperationType::Set(key.clone(), value.clone()),
-        };
-        // let mut serializer = FlexbufferSerializer::new();
-        // command.serialize(&mut serializer)?;
+        })?;
 
-        let cmd = bson::to_vec(&command)?;
+        let offset = self.db_handle.stream_position()?;
+        self.db_handle.write_all(&cmd)?;
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.db_path)?;
-        file.write_all(&cmd)?;
-
-        self.mem_index.insert(key, value);
-
+        self.mem_index.insert(key, offset);
         Ok(())
     }
 
@@ -161,8 +140,20 @@ impl KvStore {
     ///
     /// assert_eq!(kv_store.get("Foo".to_owned()), Some("Bar".to_owned()));
     /// ```
-    pub fn get(&self, key: String) -> Result<Option<String>> {
-        Ok(self.mem_index.get(&key).cloned())
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+        let offset_opt = self.mem_index.get(&key).copied();
+        match offset_opt {
+            Some(offset) => {
+                self.db_handle.seek(SeekFrom::Start(offset))?;
+                let cmd: LogCommand = decode::from_read(&mut self.db_handle)?;
+
+                match cmd.operation {
+                    OperationType::Set(_, val) => Ok(Some(val)),
+                    OperationType::Rm(_) => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
     }
 
     /// Delete a key-value pair from the store
@@ -181,20 +172,17 @@ impl KvStore {
             .remove(&key)
             .ok_or_else(|| KvsError::KeyNotFoundError)?;
 
-        let command = LogCommand {
+        let cmd = serialize_command(&LogCommand {
             operation: OperationType::Rm(key),
-        };
-        // let mut serializer = FlexbufferSerializer::new();
-        // command.serialize(&mut serializer)?;
+        })?;
 
-        let cmd = bson::to_vec(&command)?;
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.db_path)?;
-        file.write_all(&cmd)?;
+        self.db_handle.seek(SeekFrom::End(0))?;
+        self.db_handle.write_all(&cmd)?;
 
         Ok(())
     }
+}
+
+fn serialize_command(cmd: &LogCommand) -> Result<Vec<u8>> {
+    Ok(rmp_serde::to_vec(cmd)?)
 }
