@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
-use kvs::{KvStore, KvsError, Result};
+// use kvs::client;
+use kvs::engine::{KvStore, KvsError, Result};
 use std::path::Path;
 
 const DB_PATH: &str = "./";
