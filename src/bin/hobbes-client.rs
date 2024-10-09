@@ -1,6 +1,7 @@
 use clap::{Arg, Command};
 // use kvs::client;
-use kvs::engine::{KvStore, KvsError, Result};
+use hobbes::engine::KvStore;
+use hobbes::{KvsError, Result};
 use std::path::Path;
 
 const DB_PATH: &str = "./";
@@ -58,7 +59,7 @@ fn main() -> Result<()> {
 }
 
 fn cli() -> Command {
-    Command::new("kvs")
+    Command::new("hobbes-client")
         .name(env!("CARGO_BIN_NAME"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))

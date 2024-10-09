@@ -1,38 +1,14 @@
-use rmp_serde::{self, decode, encode};
+use rmp_serde::{self, decode};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufReader, Seek, SeekFrom, Write};
-use std::num;
-use std::path::{self, Path, PathBuf};
-use std::{fmt, fs};
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufReader, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+
+use super::{KvsError, Result};
 
 mod compaction;
-
-/// KV Store Error Types
-#[derive(Debug)]
-pub enum KvsError {
-    /// Indicates I/O errors
-    IoError(io::Error),
-    /// Indicates errors while serializing commands to be stored in the on-disk log
-    SerializationError(encode::Error),
-    /// Indicates errors while deserializing commands from the on-disk log
-    DeserializationError(decode::Error),
-    /// Indicates absence of key in the Store
-    KeyNotFoundError,
-    /// Indicates CLI errors
-    CliError(String),
-    /// Indicates error while stripping filepath prefixes
-    StripPrefixError(path::StripPrefixError),
-    /// Indicates error while parsing string to int
-    ParseIntError(num::ParseIntError),
-    /// Indicates an missing log reader
-    LogReaderNotFoundError(String),
-}
-
-/// Result type for the Store
-pub type Result<T> = std::result::Result<T, KvsError>;
 
 #[derive(Debug, Serialize, Deserialize)]
 enum OperationType {
@@ -62,53 +38,6 @@ struct ValueMetadata {
 }
 
 const LOG_EXTENSION: &str = ".db";
-
-impl fmt::Display for KvsError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            KvsError::IoError(ref err) => write!(f, "IO error: {}", err),
-            KvsError::SerializationError(ref err) => write!(f, "Serialization error: {}", err),
-            KvsError::DeserializationError(ref err) => write!(f, "Deserialization error: {}", err),
-            KvsError::KeyNotFoundError => write!(f, "Key not found",),
-            KvsError::CliError(ref err) => write!(f, "CLI Error: {}", err),
-            KvsError::StripPrefixError(ref err) => write!(f, "Strip Prefix Error: {}", err),
-            KvsError::ParseIntError(ref err) => write!(f, "Parse Int Error: {}", err),
-            KvsError::LogReaderNotFoundError(ref err) => {
-                write!(f, "Log Reader Not Found Error: {}", err)
-            }
-        }
-    }
-}
-
-impl From<std::io::Error> for KvsError {
-    fn from(value: std::io::Error) -> Self {
-        KvsError::IoError(value)
-    }
-}
-
-impl From<encode::Error> for KvsError {
-    fn from(value: encode::Error) -> Self {
-        KvsError::SerializationError(value)
-    }
-}
-
-impl From<decode::Error> for KvsError {
-    fn from(value: decode::Error) -> Self {
-        KvsError::DeserializationError(value)
-    }
-}
-
-impl From<path::StripPrefixError> for KvsError {
-    fn from(value: path::StripPrefixError) -> Self {
-        KvsError::StripPrefixError(value)
-    }
-}
-
-impl From<num::ParseIntError> for KvsError {
-    fn from(value: num::ParseIntError) -> Self {
-        KvsError::ParseIntError(value)
-    }
-}
 
 impl KvStore {
     /// Open an instance of KvStore at the specified directory

@@ -1,4 +1,6 @@
 /target
-kvs
+
+hobbes-server
+hobbes-client
 
 store/
