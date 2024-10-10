@@ -1,4 +1,4 @@
-use hobbes::engine::KvStore;
+use hobbes::engine::storage::KvStore;
 use hobbes::Result;
 // use kvs::KvsEngine;
 use tempfile::TempDir;

@@ -1,10 +1,12 @@
 use clap::{Arg, Command};
-// use kvs::client;
-use hobbes::engine::KvStore;
-use hobbes::{KvsError, Result};
-use std::path::Path;
+use tracing::info;
 
-const DB_PATH: &str = "./";
+use std::io::Write;
+use std::net::TcpStream;
+
+use hobbes::{KvsError, Result};
+
+const SERVER_ADDR: &str = "localhost:4000";
 
 fn main() -> Result<()> {
     let cmd = cli().get_matches();
@@ -15,42 +17,29 @@ fn main() -> Result<()> {
                 .get_one::<String>("get")
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
 
-            let mut kv = KvStore::open(Path::new(DB_PATH))?;
-            if let Some(val) = kv.get(key.clone())? {
-                println!("{val}");
-            } else {
-                println!("Key not found");
-            }
+            let cmd = String::from("GET\r\n") + key + "\r\n";
+            send_cmd(cmd)?;
         }
 
         Some(("set", sub_matches)) => {
-            let args: Vec<&String> = sub_matches
-                .get_many::<String>("set")
-                .into_iter()
-                .flatten()
-                .collect();
+            let mut args = sub_matches.get_many::<String>("set").into_iter().flatten();
+            let key = args.next().ok_or(KvsError::CliError(String::from(
+                "Missing key in SET command",
+            )))?;
+            let val = args.next().ok_or(KvsError::CliError(String::from(
+                "Missing value in SET command",
+            )))?;
 
-            let mut kv = KvStore::open(Path::new(DB_PATH))?;
-            kv.set(args[0].clone(), args[1].clone())?;
+            let cmd = String::from("SET\r\n") + key + "\r\n" + val + "\r\n";
+            send_cmd(cmd)?;
         }
 
         Some(("rm", sub_matches)) => {
             let key = sub_matches
                 .get_one::<String>("rm")
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
-
-            let mut kv = KvStore::open(Path::new(DB_PATH))?;
-            match kv.remove(key.clone()) {
-                Ok(_) => {}
-                Err(err) => match err {
-                    KvsError::KeyNotFoundError => {
-                        println!("Key not found");
-                        std::process::exit(1);
-                        // return Err(err);
-                    }
-                    _ => return Err(err),
-                },
-            };
+            let cmd = String::from("RM\r\n") + key + "\r\n";
+            send_cmd(cmd)?;
         }
         _ => eprintln!("Invalid command"),
     }
@@ -98,4 +87,18 @@ fn cli() -> Command {
                         .num_args(1),
                 ),
         )
+}
+
+fn send_cmd(cmd: String) -> Result<()> {
+    let mut conn = TcpStream::connect(SERVER_ADDR)?;
+    conn.write_all(cmd.as_bytes())?;
+    conn.flush()?;
+
+    info!(
+        cmd = cmd,
+        server_addr = SERVER_ADDR,
+        "Sent command over the network"
+    );
+
+    Ok(())
 }

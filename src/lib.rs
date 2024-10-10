@@ -7,7 +7,6 @@ use tracing::subscriber;
 
 use std::{fmt, io, num, path};
 
-pub mod client;
 pub mod engine;
 
 /// KV Store Error Types
