@@ -2,7 +2,7 @@
 name = "hobbes"
 version = "0.1.0"
 edition = "2021"
-description = "A key-value store written in Rust"
+description = "A Bitcask-like log structured key-value store written in Rust"
 authors = ["Anirudh Sudhir"]
 
 [[bin]]
@@ -10,8 +10,8 @@ name = "hobbes-server"
 path = "src/bin/hobbes-server.rs"
 
 [[bin]]
-name = "hobbes-client"
-path = "src/bin/hobbes-client.rs"
+name = "hobbes"
+path = "src/bin/hobbes.rs"
 
 [dependencies]
 clap = { version = "4.5.9", features = ["env"] }

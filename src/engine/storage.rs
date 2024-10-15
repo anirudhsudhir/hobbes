@@ -164,7 +164,7 @@ impl KvStore {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use kvs::KvStore;
+    /// use hobbes::engine::storage::KvStore;
     ///
     /// let mut kv_store = KvStore::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
@@ -205,7 +205,7 @@ impl KvStore {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use kvs::{KvStore,KvsError};
+    /// use hobbes::engine::storage::KvStore;
     ///
     /// let mut kv_store = KvStore::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");

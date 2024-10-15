@@ -1,4 +1,4 @@
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use tracing::info;
 
 use std::io::Write;
@@ -6,10 +6,13 @@ use std::net::TcpStream;
 
 use hobbes::{KvsError, Result};
 
-const SERVER_ADDR: &str = "localhost:4000";
-
 fn main() -> Result<()> {
     let cmd = cli().get_matches();
+
+    let addr = cmd
+        .get_one::<String>("addr")
+        .ok_or_else(|| KvsError::CliError(String::from("failed to parse argument \"addr\"")))?
+        .to_string();
 
     match cmd.subcommand() {
         Some(("get", sub_matches)) => {
@@ -18,7 +21,7 @@ fn main() -> Result<()> {
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
 
             let cmd = String::from("GET\r\n") + key + "\r\n";
-            send_cmd(cmd)?;
+            send_cmd(cmd, addr)?;
         }
 
         Some(("set", sub_matches)) => {
@@ -31,7 +34,7 @@ fn main() -> Result<()> {
             )))?;
 
             let cmd = String::from("SET\r\n") + key + "\r\n" + val + "\r\n";
-            send_cmd(cmd)?;
+            send_cmd(cmd, addr)?;
         }
 
         Some(("rm", sub_matches)) => {
@@ -39,7 +42,7 @@ fn main() -> Result<()> {
                 .get_one::<String>("rm")
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
             let cmd = String::from("RM\r\n") + key + "\r\n";
-            send_cmd(cmd)?;
+            send_cmd(cmd, addr)?;
         }
         _ => eprintln!("Invalid command"),
     }
@@ -59,6 +62,12 @@ fn cli() -> Command {
                 .about("return the value associated with a key")
                 .arg_required_else_help(true)
                 .arg(
+                    Arg::new("addr")
+                        .help("set the endpoint to connect to")
+                        .long("addr")
+                        .default_value("127.0.0.1:4000"),
+                )
+                .arg(
                     Arg::new("get")
                         .help("key whose value is to be retrieved")
                         .value_name("KEY")
@@ -69,6 +78,12 @@ fn cli() -> Command {
             Command::new("set")
                 .about("store a key-value pair")
                 .arg_required_else_help(true)
+                .arg(
+                    Arg::new("addr")
+                        .help("set the endpoint to connect to")
+                        .long("addr")
+                        .default_value("127.0.0.1:4000"),
+                )
                 .arg(
                     Arg::new("set")
                         .help("key-value pair to be stored")
@@ -81,6 +96,12 @@ fn cli() -> Command {
                 .about("delete a key-value pair from the store")
                 .arg_required_else_help(true)
                 .arg(
+                    Arg::new("addr")
+                        .help("set the endpoint to connect to")
+                        .long("addr")
+                        .default_value("127.0.0.1:4000"),
+                )
+                .arg(
                     Arg::new("rm")
                         .help("key-value pair to be deleted from the store")
                         .value_name("KEY")
@@ -89,14 +110,14 @@ fn cli() -> Command {
         )
 }
 
-fn send_cmd(cmd: String) -> Result<()> {
-    let mut conn = TcpStream::connect(SERVER_ADDR)?;
+fn send_cmd(cmd: String, addr: String) -> Result<()> {
+    let mut conn = TcpStream::connect(&addr)?;
     conn.write_all(cmd.as_bytes())?;
     conn.flush()?;
 
     info!(
         cmd = cmd,
-        server_addr = SERVER_ADDR,
+        server_addr = addr,
         "Sent command over the network"
     );
 
