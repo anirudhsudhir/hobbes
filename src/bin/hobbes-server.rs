@@ -13,8 +13,7 @@ fn main() -> Result<()> {
         .with_max_level(tracing::Level::TRACE)
         .with_timer(LocalTime::rfc_3339())
         .with_target(true)
-        .with_test_writer()
-        .with_writer(io::stdout)
+        .with_writer(io::stderr)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;

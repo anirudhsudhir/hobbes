@@ -1,6 +1,6 @@
 use tracing::{error, info, warn};
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::TcpListener;
 use std::path::Path;
 
@@ -11,46 +11,57 @@ pub mod storage;
 const DB_PATH: &str = "./";
 
 pub fn start_server(addr: &str) -> Result<()> {
-    info!("starting hobbes server");
+    info!(server_addr = addr, "starting hobbes server");
 
     let listener = TcpListener::bind(addr)?;
 
     for stream in listener.incoming() {
-        let mut data = String::new();
-        match stream {
-            Ok(mut stream) => {
-                info!(addr = %stream.peer_addr()?, msg = "client connected");
-                stream.read_to_string(&mut data)?;
-            }
-            Err(err) => {
-                error!("cli error: {}", err);
-            }
-        }
+        let tcp_stream = stream?;
+        let mut reader = BufReader::new(&tcp_stream);
+        info!(client_addr = %tcp_stream.peer_addr()?, msg = "client connected");
 
-        let mut msg = data.split("\r\n");
+        let mut data = String::new();
+        reader.read_line(&mut data)?;
+
+        info!(
+            client_addr = %tcp_stream.peer_addr()?,
+            request = data,
+            "Recieved command from client"
+        );
+
+        let mut msg = data.split("\r");
         let cmd = msg.next().ok_or(KvsError::CliError(String::from(
             "Missing command in request",
         )))?;
+
+        let mut resp = String::from("Success");
         match cmd {
             "GET" => {
-                handle_get(msg)?;
+                resp = handle_get(msg)?;
             }
             "SET" => {
                 handle_set(msg)?;
             }
             "RM" => {
-                handle_rm(msg)?;
+                resp = handle_rm(msg)?;
             }
             _ => {
                 error!(cmd = cmd, "Invalid command");
+                resp = String::from("Invalid command");
             }
         }
+
+        let mut writer = BufWriter::new(&tcp_stream);
+        writer.write_all(resp.as_bytes())?;
+        writer.flush()?;
+
+        info!(cmd = cmd, response = resp, "Sent response to client");
     }
 
     Ok(())
 }
 
-fn handle_get<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
+fn handle_get<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
     let key = msg
         .next()
         .ok_or(KvsError::CliError(String::from(
@@ -62,13 +73,11 @@ fn handle_get<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
     let mut kv = storage::KvStore::open(Path::new(DB_PATH))?;
     if let Some(val) = kv.get(key.to_string())? {
         info!(cmd = "GET", key = key, val = val, "Successful query");
-        // println!("{val}");
+        Ok(val)
     } else {
         warn!(cmd = "GET", key = key, "Key not found");
-        // println!("Key not found");
+        Ok(String::from("Key not found"))
     }
-
-    Ok(())
 }
 
 fn handle_set<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
@@ -93,7 +102,7 @@ fn handle_set<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
     Ok(())
 }
 
-fn handle_rm<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
+fn handle_rm<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
     let key = msg
         .next()
         .ok_or(KvsError::CliError(String::from(
@@ -104,16 +113,16 @@ fn handle_rm<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
 
     let mut kv = storage::KvStore::open(Path::new(DB_PATH))?;
     match kv.remove(key.to_string()) {
-        Ok(_) => {}
+        Ok(_) => {
+            info!(cmd = "RM", key = key, "Successful query");
+            Ok(String::from("Success"))
+        }
         Err(err) => match err {
             KvsError::KeyNotFoundError => {
-                println!("Key not found");
-                std::process::exit(1);
+                info!(cmd = "RM", key = key, "Key not found");
+                Ok(String::from("Key not found"))
             }
-            _ => return Err(err),
+            _ => Err(err),
         },
-    };
-    info!(cmd = "RM", key = key, "Successful query");
-
-    Ok(())
+    }
 }

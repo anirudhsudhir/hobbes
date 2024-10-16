@@ -64,9 +64,10 @@ hobbes rm foo
 The key-value store is a server that listens for commands on the specified address. You may use a tool such as netcat instead of the hobbes client to send commands
 
 ```sh
-echo "GET\r\nfoo\r\n" | nc localhost 4000
-echo "SET\r\n<key>\r\n<val>\r\n" | nc <addr> <port>
-echo "RM\r\n<key>\r\n" | nc <addr> <port>
+echo "GET\rfoo\r\n" | nc localhost 4000
+echo "SET\r<key>\r<val>\r\n" | nc <addr> <port>
+echo "RM\r<key>\r\n" | nc <addr> <port>
 ```
 
-The command and arguments are separated by a carriage return line feed (CRLF)(`\r\n`)
+The command and arguments are separated by a carriage return (CR)(`\r`), with a
+terminating newline (`\n`)
