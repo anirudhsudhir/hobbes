@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
 use tracing::debug;
-use tracing_subscriber::fmt::time::LocalTime;
+use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
 
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
@@ -11,7 +11,7 @@ use hobbes::{KvsError, Result};
 
 fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
-        .with_timer(LocalTime::rfc_3339())
+        .with_timer(time::ChronoLocal::rfc_3339())
         .with_target(true)
         .with_test_writer()
         .with_writer(io::stdout)

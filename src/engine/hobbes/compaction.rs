@@ -6,13 +6,13 @@ use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use super::{
-    serialize_command, KvStore, KvsError, LogCommand, OperationType, Result, ValueMetadata,
+    serialize_command, HobbesEngine, KvsError, LogCommand, OperationType, Result, ValueMetadata,
     LOG_EXTENSION,
 };
 
 const MAX_FILE_SIZE: u64 = 10000;
 
-impl KvStore {
+impl HobbesEngine {
     fn compaction_manager(&mut self) -> Result<()> {
         // Stopping writes to the current log and creating a new log
         let compacted_log_id = self.current_log_id;

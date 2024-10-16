@@ -6,13 +6,27 @@ use std::path::Path;
 
 use super::{KvsError, Result};
 
-pub mod storage;
+pub mod hobbes;
+pub mod sled_engine;
 
-const DB_PATH: &str = "./";
+const DB_PARENT_PATH: &str = "./";
+const HOBBES_DB_PATH: &str = "./hobbes-store";
+const SLED_DB_PATH: &str = "./sled-store";
 
-pub fn start_server(addr: &str) -> Result<()> {
+pub trait Engine {
+    fn set(&mut self, key: String, value: String) -> Result<()>;
+    fn get(&mut self, key: String) -> Result<Option<String>>;
+    fn remove(&mut self, key: String) -> Result<()>;
+}
+
+pub fn start_server(addr: &str, engine: &str) -> Result<()> {
     info!(server_addr = addr, "starting hobbes server");
 
+    let mut store: Box<dyn Engine> = match engine {
+        "hobbes" => Box::new(hobbes::HobbesEngine::open(Path::new(&DB_PARENT_PATH))?),
+        "sled" => Box::new(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
+        _ => Err(KvsError::CliError(String::from("invalid engine")))?,
+    };
     let listener = TcpListener::bind(addr)?;
 
     for stream in listener.incoming() {
@@ -24,6 +38,7 @@ pub fn start_server(addr: &str) -> Result<()> {
         reader.read_line(&mut data)?;
 
         info!(
+            server_addr = addr,
             client_addr = %tcp_stream.peer_addr()?,
             request = data,
             "Recieved command from client"
@@ -37,13 +52,13 @@ pub fn start_server(addr: &str) -> Result<()> {
         let mut resp = String::from("Success");
         match cmd {
             "GET" => {
-                resp = handle_get(msg)?;
+                resp = handle_get(&mut store, msg)?;
             }
             "SET" => {
-                handle_set(msg)?;
+                handle_set(&mut store, msg)?;
             }
             "RM" => {
-                resp = handle_rm(msg)?;
+                resp = handle_rm(&mut store, msg)?;
             }
             _ => {
                 error!(cmd = cmd, "Invalid command");
@@ -61,7 +76,10 @@ pub fn start_server(addr: &str) -> Result<()> {
     Ok(())
 }
 
-fn handle_get<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
+fn handle_get<'a>(
+    store: &mut Box<dyn Engine>,
+    mut msg: impl Iterator<Item = &'a str>,
+) -> Result<String> {
     let key = msg
         .next()
         .ok_or(KvsError::CliError(String::from(
@@ -70,8 +88,7 @@ fn handle_get<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
         .trim();
     info!(cmd = "GET", key = key, "Received command");
 
-    let mut kv = storage::KvStore::open(Path::new(DB_PATH))?;
-    if let Some(val) = kv.get(key.to_string())? {
+    if let Some(val) = store.get(key.to_string())? {
         info!(cmd = "GET", key = key, val = val, "Successful query");
         Ok(val)
     } else {
@@ -80,7 +97,10 @@ fn handle_get<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
     }
 }
 
-fn handle_set<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
+fn handle_set<'a>(
+    store: &mut Box<dyn Engine>,
+    mut msg: impl Iterator<Item = &'a str>,
+) -> Result<()> {
     let key = msg
         .next()
         .ok_or(KvsError::CliError(String::from(
@@ -95,14 +115,16 @@ fn handle_set<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
         .trim();
     info!(cmd = "SET", key = key, val = val, "Received command");
 
-    let mut kv = storage::KvStore::open(Path::new(DB_PATH))?;
-    kv.set(key.to_string(), val.to_string())?;
+    store.set(key.to_string(), val.to_string())?;
     info!(cmd = "SET", key = key, val = val, "Successful query");
 
     Ok(())
 }
 
-fn handle_rm<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
+fn handle_rm<'a>(
+    store: &mut Box<dyn Engine>,
+    mut msg: impl Iterator<Item = &'a str>,
+) -> Result<String> {
     let key = msg
         .next()
         .ok_or(KvsError::CliError(String::from(
@@ -111,8 +133,7 @@ fn handle_rm<'a>(mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
         .trim();
     info!(cmd = "RM", key = key, "Received command");
 
-    let mut kv = storage::KvStore::open(Path::new(DB_PATH))?;
-    match kv.remove(key.to_string()) {
+    match store.remove(key.to_string()) {
         Ok(_) => {
             info!(cmd = "RM", key = key, "Successful query");
             Ok(String::from("Success"))

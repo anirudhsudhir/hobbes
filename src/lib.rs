@@ -5,11 +5,11 @@
 use rmp_serde::{decode, encode};
 use tracing::subscriber;
 
-use std::{fmt, io, num, path};
+use std::{fmt, io, num, path, string};
 
 pub mod engine;
 
-/// KV Store Error Types
+/// Error Types for the store
 #[derive(Debug)]
 pub enum KvsError {
     /// Indicates I/O errors
@@ -26,14 +26,18 @@ pub enum KvsError {
     StripPrefixError(path::StripPrefixError),
     /// Indicates error while parsing string to int
     ParseIntError(num::ParseIntError),
+    /// Indicates an error while parsing UTF-8 to string
+    FromUtf8Error(string::FromUtf8Error),
     /// Indicates an missing log reader
     LogReaderNotFoundError(String),
-    /// Indicates an error while setting the global default tracing subscriber for strutured
+    /// Indicates an error while setting the global default tracing subscriber for structured
     /// logging
     SetGlobalDefaultError(subscriber::SetGlobalDefaultError),
+    /// Indicates errors arising from the sled Db type
+    SledDbError(sled::Error),
 }
 
-/// Result type for the Store
+/// Result type for the store
 pub type Result<T> = std::result::Result<T, KvsError>;
 
 pub struct KvsEngine {}
@@ -48,12 +52,14 @@ impl fmt::Display for KvsError {
             KvsError::CliError(ref err) => write!(f, "CLI Error: {}", err),
             KvsError::StripPrefixError(ref err) => write!(f, "Strip Prefix Error: {}", err),
             KvsError::ParseIntError(ref err) => write!(f, "Parse Int Error: {}", err),
+            KvsError::FromUtf8Error(ref err) => write!(f, "From UTF-8 Error: {}", err),
             KvsError::LogReaderNotFoundError(ref err) => {
                 write!(f, "Log Reader Not Found Error: {}", err)
             }
             KvsError::SetGlobalDefaultError(ref err) => {
                 write!(f, "Set Global Default Error: {}", err)
             }
+            KvsError::SledDbError(ref err) => write!(f, "Sled Engine Error: {}", err),
         }
     }
 }
@@ -88,8 +94,20 @@ impl From<num::ParseIntError> for KvsError {
     }
 }
 
+impl From<string::FromUtf8Error> for KvsError {
+    fn from(value: string::FromUtf8Error) -> Self {
+        KvsError::FromUtf8Error(value)
+    }
+}
+
 impl From<subscriber::SetGlobalDefaultError> for KvsError {
     fn from(value: subscriber::SetGlobalDefaultError) -> Self {
         KvsError::SetGlobalDefaultError(value)
+    }
+}
+
+impl From<sled::Error> for KvsError {
+    fn from(value: sled::Error) -> Self {
+        KvsError::SledDbError(value)
     }
 }

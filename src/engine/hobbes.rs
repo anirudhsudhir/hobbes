@@ -6,7 +6,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use super::{KvsError, Result};
+use super::{Engine, KvsError, Result, HOBBES_DB_PATH, SLED_DB_PATH};
 
 mod compaction;
 
@@ -23,7 +23,7 @@ struct LogCommand {
 
 /// KvStore holds the in-memory index with keys and log pointers
 #[derive(Debug)]
-pub struct KvStore {
+pub struct HobbesEngine {
     mem_index: HashMap<String, ValueMetadata>,
     logs_dir: PathBuf,
     log_writer: File,
@@ -39,10 +39,18 @@ struct ValueMetadata {
 
 const LOG_EXTENSION: &str = ".db";
 
-impl KvStore {
-    /// Open an instance of KvStore at the specified directory
-    pub fn open(logs_dir_arg: &Path) -> Result<KvStore> {
-        let logs_dir = logs_dir_arg.join("store/");
+impl HobbesEngine {
+    /// Open an instance of HobbesEngine at the specified directory
+    pub fn open(logs_dir_arg: &Path) -> Result<HobbesEngine> {
+        // Check if a sled-store already exists
+        let sled_store_dir = logs_dir_arg.join(SLED_DB_PATH);
+        if Path::is_dir(&sled_store_dir) {
+            Err(KvsError::CliError(String::from(
+                "sled storage engine used previously, using the hobbes engine is an invalid operation",
+            )))?
+        }
+
+        let logs_dir = logs_dir_arg.join(HOBBES_DB_PATH);
 
         // Check if the user-provided path is without extensions
         if Path::extension(logs_dir_arg).is_some() {
@@ -127,7 +135,7 @@ impl KvStore {
             latest_file_id = 1;
         }
 
-        Ok(KvStore {
+        Ok(HobbesEngine {
             mem_index,
             logs_dir,
             log_writer,
@@ -135,9 +143,11 @@ impl KvStore {
             current_log_id: latest_file_id,
         })
     }
+}
 
+impl Engine for HobbesEngine {
     /// Store a key-value pair
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
+    fn set(&mut self, key: String, value: String) -> Result<()> {
         let cmd = serialize_command(&LogCommand {
             operation: OperationType::Set(key.clone(), value.clone()),
         })?;
@@ -164,14 +174,15 @@ impl KvStore {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use hobbes::engine::storage::KvStore;
+    /// use hobbes::engine::hobbes::HobbesEngine;
+    /// use hobbes::engine::Engine;
     ///
-    /// let mut kv_store = KvStore::open(temp_dir.path()).expect("unable to create a new KvStore");
+    /// let mut kv_store = HobbesEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
     ///
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), Some("Bar".to_owned()));
     /// ```
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+    fn get(&mut self, key: String) -> Result<Option<String>> {
         // panic!("{:?}", &self);
         let value_metadata_opt = self.mem_index.get(&key);
 
@@ -205,16 +216,17 @@ impl KvStore {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use hobbes::engine::storage::KvStore;
+    /// use hobbes::engine::hobbes::HobbesEngine;
+    /// use hobbes::engine::Engine;
     ///
-    /// let mut kv_store = KvStore::open(temp_dir.path()).expect("unable to create a new KvStore");
+    /// let mut kv_store = HobbesEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
     ///
     /// kv_store.remove("Foo".to_owned());
     ///
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), None);
     /// ```
-    pub fn remove(&mut self, key: String) -> Result<()> {
+    fn remove(&mut self, key: String) -> Result<()> {
         self.mem_index
             .remove(&key)
             .ok_or_else(|| KvsError::KeyNotFoundError)?;

@@ -17,15 +17,14 @@ cargo install --path .
 - Start the server
 
 ```txt
-hobbes-server -h
+./hobbes-server -h
 Usage: hobbes-server [OPTIONS]
 
 Options:
       --addr <addr>      set the server endpoint [default: 127.0.0.1:4000]
-      --engine <engine>  set the storage engine [default: kvs]
+      --engine <engine>  set the storage engine [default: hobbes] [possible values: hobbes, sled]
   -h, --help             Print help
   -V, --version          Print version
-
 
 hobbes-server
 ```
@@ -33,10 +32,10 @@ hobbes-server
 - Use the client to issue commands to the server
 
 ```txt
-hobbes -h
+./hobbes -h
 A Bitcask-like log structured key-value store written in Rust
 
-Usage: hobbes <COMMAND>
+Usage: hobbes [OPTIONS] <COMMAND>
 
 Commands:
   get   return the value associated with a key
@@ -45,9 +44,9 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
-
+      --addr <addr>  set the endpoint to connect to [default: 127.0.0.1:4000]
+  -h, --help         Print help
+  -V, --version      Print version
 
 hobbes set foo bar
 hobbes get foo
@@ -58,6 +57,13 @@ hobbes rm foo
 
 - Single mutable and multiple immutable logs: The store uses the Bitcask architecture. At any instance, the storage directory contains a mutable write-ahead log as well as several immutable logs
 - Log Compaction: The store compacts logs when the filesize hits a certain threshold for efficient disk utilisation
+
+## Storage engines
+
+Hobbes offers pluggable storage backends. Currently, there are two choices:
+
+- hobbes: The default engine with a Bitcask-like architecture, built from scratch
+- sled: An alternate production engine with features such as ACID transactions ([Github](https://github.com/spacejam/sled))
 
 ## Client-server architecture
 

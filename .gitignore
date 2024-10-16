@@ -5,3 +5,7 @@ hobbes-server
 hobbes-client
 
 store/
+hobbes-store/
+sled-store/
+
+!hobbes/

@@ -157,7 +157,7 @@ fn cli_log_configuration() {
     let stderr_path = temp_dir.path().join("stderr");
     let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
     let mut child = cmd
-        .args(&["--engine", "kvs", "--addr", "127.0.0.1:4001"])
+        .args(&["--engine", "hobbes", "--addr", "127.0.0.1:4001"])
         .current_dir(&temp_dir)
         .stderr(File::create(&stderr_path).unwrap())
         .spawn()
@@ -167,14 +167,13 @@ fn cli_log_configuration() {
 
     let content = fs::read_to_string(&stderr_path).expect("unable to read from stderr file");
     assert!(content.contains(env!("CARGO_PKG_VERSION")));
-    assert!(content.contains("kvs"));
+    assert!(content.contains("hobbes"));
     assert!(content.contains("127.0.0.1:4001"));
 }
 
 #[test]
-#[ignore]
 fn cli_wrong_engine() {
-    // sled first, kvs second
+    // sled first, hobbes second
     {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
@@ -187,18 +186,18 @@ fn cli_wrong_engine() {
         child.kill().expect("server exited before killed");
 
         let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
-        cmd.args(&["--engine", "kvs", "--addr", "127.0.0.1:4003"])
+        cmd.args(&["--engine", "hobbes", "--addr", "127.0.0.1:4003"])
             .current_dir(&temp_dir)
             .assert()
             .failure();
     }
 
-    // kvs first, sled second
+    // hobbes first, sled second
     {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
         let mut child = cmd
-            .args(&["--engine", "kvs", "--addr", "127.0.0.1:4002"])
+            .args(&["--engine", "hobbes", "--addr", "127.0.0.1:4002"])
             .current_dir(&temp_dir)
             .spawn()
             .unwrap();
@@ -283,7 +282,6 @@ fn cli_access_server(engine: &str, addr: &str) {
         .assert()
         .success()
         .stdout(is_empty());
-
     Command::cargo_bin("hobbes")
         .unwrap()
         .args(&["--addr", addr, "rm", "key1"])
@@ -328,10 +326,11 @@ fn cli_access_server(engine: &str, addr: &str) {
 }
 
 #[test]
-fn cli_access_server_kvs_engine() {
-    cli_access_server("kvs", "127.0.0.1:4004");
+fn cli_access_server_hobbes_engine() {
+    cli_access_server("hobbes", "127.0.0.1:4004");
 }
 
+// This test passes locally but fails in Github CI
 #[test]
 #[ignore]
 fn cli_access_server_sled_engine() {
