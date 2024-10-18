@@ -6,8 +6,8 @@ use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use super::{
-    serialize_command, HobbesEngine, KvsError, LogCommand, OperationType, Result, ValueMetadata,
-    LOG_EXTENSION,
+    serialize_command, HobbesEngine, KvsError, LogEntry, Result, ValueMetadata, LOG_EXTENSION,
+    TOMBSTONE,
 };
 
 const MAX_FILE_SIZE: u64 = 10000;
@@ -41,10 +41,10 @@ impl HobbesEngine {
 
         // Replaying the commands of the stale log
         while let Ok(decode_cmd) = decode::from_read(&mut log_reader) {
-            let cmd: LogCommand = decode_cmd;
-            match cmd.operation {
-                OperationType::Set(key, value) => compacted_store_map.insert(key, value),
-                OperationType::Rm(key) => compacted_store_map.remove(&key),
+            let cmd: LogEntry = decode_cmd;
+            match cmd.val.as_str() {
+                TOMBSTONE => compacted_store_map.remove(&cmd.key),
+                _ => compacted_store_map.insert(cmd.key, cmd.val),
             };
         }
 
@@ -62,8 +62,9 @@ impl HobbesEngine {
         // Persisting compacted logs and updating the index
         let mut offset: u64 = 0;
         for (key, val) in compacted_store_map.into_iter() {
-            let cmd = serialize_command(&LogCommand {
-                operation: OperationType::Set(key.clone(), val),
+            let cmd = serialize_command(&LogEntry {
+                key: key.clone(),
+                val,
             })?;
 
             compacted_log_writer.write_all(&cmd)?;

@@ -11,14 +11,9 @@ use super::{Engine, KvsError, Result, HOBBES_DB_PATH, SLED_DB_PATH};
 mod compaction;
 
 #[derive(Debug, Serialize, Deserialize)]
-enum OperationType {
-    Set(String, String),
-    Rm(String),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct LogCommand {
-    operation: OperationType,
+struct LogEntry {
+    key: String,
+    val: String,
 }
 
 /// KvStore holds the in-memory index with keys and log pointers
@@ -37,6 +32,7 @@ struct ValueMetadata {
     log_id: u64,
 }
 
+const TOMBSTONE: &str = "!tomb!";
 const LOG_EXTENSION: &str = ".db";
 
 impl HobbesEngine {
@@ -108,16 +104,16 @@ impl HobbesEngine {
                 let mut offset = log_reader.stream_position()?;
 
                 while let Ok(decode_cmd) = decode::from_read(&mut log_reader) {
-                    let cmd: LogCommand = decode_cmd;
-                    match cmd.operation {
-                        OperationType::Set(key, _) => mem_index.insert(
-                            key,
+                    let cmd: LogEntry = decode_cmd;
+                    match cmd.val.as_str() {
+                        TOMBSTONE => mem_index.remove(&cmd.key),
+                        _ => mem_index.insert(
+                            cmd.key,
                             ValueMetadata {
                                 log_pointer: offset,
                                 log_id: i,
                             },
                         ),
-                        OperationType::Rm(key) => mem_index.remove(&key),
                     };
 
                     offset = log_reader.stream_position()?;
@@ -148,8 +144,9 @@ impl HobbesEngine {
 impl Engine for HobbesEngine {
     /// Store a key-value pair
     fn set(&mut self, key: String, value: String) -> Result<()> {
-        let cmd = serialize_command(&LogCommand {
-            operation: OperationType::Set(key.clone(), value.clone()),
+        let cmd = serialize_command(&LogEntry {
+            key: key.clone(),
+            val: value.clone(),
         })?;
 
         self.log_writer.seek(SeekFrom::End(0))?;
@@ -199,11 +196,11 @@ impl Engine for HobbesEngine {
                     })?;
 
                 requested_log_reader.seek(SeekFrom::Start(value_metadata.log_pointer))?;
-                let cmd: LogCommand = decode::from_read(&mut requested_log_reader)?;
+                let cmd: LogEntry = decode::from_read(&mut requested_log_reader)?;
 
-                match cmd.operation {
-                    OperationType::Set(_, val) => Ok(Some(val)),
-                    OperationType::Rm(_) => Ok(None),
+                match cmd.val.as_str() {
+                    TOMBSTONE => Ok(None),
+                    _ => Ok(Some(cmd.val)),
                 }
             }
             None => Ok(None),
@@ -231,8 +228,9 @@ impl Engine for HobbesEngine {
             .remove(&key)
             .ok_or_else(|| KvsError::KeyNotFoundError)?;
 
-        let cmd = serialize_command(&LogCommand {
-            operation: OperationType::Rm(key),
+        let cmd = serialize_command(&LogEntry {
+            key,
+            val: TOMBSTONE.to_string(),
         })?;
 
         self.log_writer.seek(SeekFrom::Start(0))?;
@@ -243,6 +241,6 @@ impl Engine for HobbesEngine {
     }
 }
 
-fn serialize_command(cmd: &LogCommand) -> Result<Vec<u8>> {
+fn serialize_command(cmd: &LogEntry) -> Result<Vec<u8>> {
     Ok(rmp_serde::to_vec(cmd)?)
 }
