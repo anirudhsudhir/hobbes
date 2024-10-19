@@ -2,12 +2,11 @@ use rmp_serde::{self, decode};
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, Seek, Write};
 use std::path::PathBuf;
 
 use super::{
-    serialize_command, HobbesEngine, KvsError, LogEntry, Result, ValueMetadata, LOG_EXTENSION,
-    TOMBSTONE,
+    serialize_command, HobbesEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION, TOMBSTONE,
 };
 
 const MAX_FILE_SIZE: u64 = 10000;
@@ -81,15 +80,10 @@ impl HobbesEngine {
         // Updating KvStore
         fs::rename(&compacted_log_path, &stale_log_path)?;
         self.mem_index = updated_index;
-        self.log_readers
-            .get_mut(&compacted_log_id)
-            .ok_or_else(|| {
-                KvsError::LogReaderNotFoundError(format!(
-                    "Log {} does not have a valid reader",
-                    compacted_log_id
-                ))
-            })?
-            .seek(SeekFrom::Start(0))?;
+        self.log_readers.insert(
+            compacted_log_id,
+            BufReader::new(File::open(&stale_log_path)?),
+        );
 
         Ok(())
     }
