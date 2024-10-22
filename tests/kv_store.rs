@@ -1,10 +1,10 @@
-use hobbes::engine::hobbes::HobbesEngine;
-use hobbes::Result;
+use hobbes_kv::engine::hobbes::HobbesEngine;
+use hobbes_kv::Result;
 // use kvs::KvsEngine;
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use hobbes::engine::Engine;
+use hobbes_kv::engine::Engine;
 
 // Should get previously stored value
 #[test]

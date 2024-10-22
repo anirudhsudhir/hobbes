@@ -7,7 +7,7 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
 use std::process;
 
-use hobbes::{KvsError, Result};
+use hobbes_kv::{KvsError, Result};
 
 fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()

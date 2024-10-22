@@ -7,5 +7,6 @@ hobbes-client
 store/
 hobbes-store/
 sled-store/
+bench-db/
 
 !hobbes/

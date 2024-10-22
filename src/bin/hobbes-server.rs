@@ -5,8 +5,8 @@ use tracing_subscriber::FmtSubscriber;
 
 use std::io;
 
-use hobbes::engine;
-use hobbes::{KvsError, Result};
+use hobbes_kv::engine;
+use hobbes_kv::{KvsError, Result};
 
 fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()

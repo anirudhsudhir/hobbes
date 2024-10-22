@@ -171,8 +171,8 @@ impl Engine for HobbesEngine {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use hobbes::engine::hobbes::HobbesEngine;
-    /// use hobbes::engine::Engine;
+    /// use hobbes_kv::engine::hobbes::HobbesEngine;
+    /// use hobbes_kv::engine::Engine;
     ///
     /// let mut kv_store = HobbesEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
@@ -213,8 +213,8 @@ impl Engine for HobbesEngine {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use hobbes::engine::hobbes::HobbesEngine;
-    /// use hobbes::engine::Engine;
+    /// use hobbes_kv::engine::hobbes::HobbesEngine;
+    /// use hobbes_kv::engine::Engine;
     ///
     /// let mut kv_store = HobbesEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
