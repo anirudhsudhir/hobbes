@@ -11,7 +11,6 @@ use hobbes::{KvsError, Result};
 fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(tracing::Level::TRACE)
-        // .with_timer(LocalTime::rfc_3339())
         .with_timer(time::ChronoLocal::rfc_3339())
         .with_target(true)
         .with_writer(io::stderr)

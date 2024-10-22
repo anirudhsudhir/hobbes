@@ -1,6 +1,6 @@
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 
@@ -32,19 +32,57 @@ pub fn start_server(addr: &str, engine: &str) -> Result<()> {
     for stream in listener.incoming() {
         let tcp_stream = stream?;
         let mut reader = BufReader::new(&tcp_stream);
+        info!("==============================================");
         info!(client_addr = %tcp_stream.peer_addr()?, msg = "client connected");
 
-        let mut data = String::new();
-        reader.read_line(&mut data)?;
+        // Extracting the command length from the client request
+        let mut cmd_prefix = String::new();
+        reader.read_line(&mut cmd_prefix)?;
+        let cmd_prefix_str = match cmd_prefix.strip_suffix("\r\n") {
+            Some(val) => val,
+            None => {
+                error!("network command prefix not appended with \r\n, command = {cmd_prefix}");
+                continue;
+            }
+        };
 
-        info!(
+        debug!(
             server_addr = addr,
             client_addr = %tcp_stream.peer_addr()?,
-            request = data,
-            "Recieved command from client"
+            cmd_prefix = cmd_prefix,
+            cmd_prefix_stripped = cmd_prefix_str,
+            "Extracted command length from client request"
+        );
+        let cmd_len = match cmd_prefix_str.parse::<usize>() {
+            Ok(val) => val,
+            Err(err) => {
+                error!(err = %err, "failed to parse the command length");
+                continue;
+            }
+        };
+
+        // Reading the command from the server
+        let mut cmd_bytes = vec![0u8; cmd_len];
+        reader.read_exact(&mut cmd_bytes)?;
+        let cmd_str = match String::from_utf8(cmd_bytes.clone()) {
+            Ok(val) => val,
+            Err(err) => {
+                error!(
+                    err = %err,
+                    "failed to parse command from client, command_bytes = {:?}", cmd_bytes
+                );
+                continue;
+            }
+        };
+
+        debug!(
+            server_addr = addr,
+            client_addr = %tcp_stream.peer_addr()?,
+            request = cmd_str,
+            "Read command from client request"
         );
 
-        let mut msg = data.split("\r");
+        let mut msg = cmd_str.split("\r\n");
         let cmd = msg.next().ok_or(KvsError::CliError(String::from(
             "Missing command in request",
         )))?;
@@ -67,10 +105,11 @@ pub fn start_server(addr: &str, engine: &str) -> Result<()> {
         }
 
         let mut writer = BufWriter::new(&tcp_stream);
+        debug!(bytes = resp.len(), msg = "server response");
         writer.write_all(resp.as_bytes())?;
         writer.flush()?;
 
-        info!(cmd = cmd, response = resp, "Sent response to client");
+        debug!(cmd = cmd, response = resp, "Sent response to client");
     }
 
     Ok(())

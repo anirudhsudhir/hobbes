@@ -70,10 +70,12 @@ Hobbes offers pluggable storage backends. Currently, there are two choices:
 The key-value store is a server that listens for commands on the specified address. You may use a tool such as netcat instead of the hobbes client to send commands
 
 ```sh
-echo "GET\rfoo\r\n" | nc localhost 4000
-echo "SET\r<key>\r<val>\r\n" | nc <addr> <port>
-echo "RM\r<key>\r\n" | nc <addr> <port>
+echo "<length_of_cmd>\r\nSET\r\n<key>\r\n<val>\r\n" | nc <addr> <port>
+echo "10\r\nGET\r\nfoo\r\n" | nc localhost 4000
+echo "15\r\nSET\r\nfoo\r\nbar\r\n" | nc localhost 4000
+echo "9\r\nRM\r\nfoo\r\n" | nc localhost 4000
 ```
 
-The command and arguments are separated by a carriage return (CR)(`\r`), with a
-terminating newline (`\n`)
+The length of the command is prepended before being sent. For instance, `GET\r\nfoo\r\n` is 10 bytes long. `10\r\n` is prefixed to the command and sent.
+
+The command and arguments are separated and terminated by a carriage return line feed (CRLF)(`\r\n`).

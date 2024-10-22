@@ -11,6 +11,7 @@ use hobbes::{KvsError, Result};
 
 fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
+        // .with_max_level(tracing::Level::TRACE)
         .with_timer(time::ChronoLocal::rfc_3339())
         .with_target(true)
         .with_test_writer()
@@ -32,7 +33,7 @@ fn main() -> Result<()> {
                 .get_one::<String>("get")
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
 
-            let cmd = String::from("GET\r") + key + "\r\n";
+            let cmd = format!("GET\r\n{key}\r\n");
             let resp = send_cmd(cmd, addr)?;
             match resp.as_str() {
                 "Key not found" => println!("{resp}"),
@@ -49,7 +50,7 @@ fn main() -> Result<()> {
                 "Missing value in SET command",
             )))?;
 
-            let cmd = String::from("SET\r") + key + "\r" + val + "\r\n";
+            let cmd = format!("SET\r\n{key}\r\n{val}\r\n");
             send_cmd(cmd, addr)?;
         }
 
@@ -57,7 +58,7 @@ fn main() -> Result<()> {
             let key = sub_matches
                 .get_one::<String>("rm")
                 .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
-            let cmd = String::from("RM\r") + key + "\r\n";
+            let cmd = format!("RM\r\n{key}\r\n");
             let resp = send_cmd(cmd, addr)?;
             if resp == "Key not found" {
                 eprintln!("{resp}");
@@ -71,7 +72,7 @@ fn main() -> Result<()> {
 }
 
 fn cli() -> Command {
-    Command::new("hobbes-client")
+    Command::new("hobbes")
         .name(env!("CARGO_BIN_NAME"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -130,13 +131,22 @@ fn cli() -> Command {
         )
 }
 
-fn send_cmd(cmd: String, addr: String) -> Result<String> {
+fn send_cmd(cmd_to_send: String, addr: String) -> Result<String> {
     let stream = TcpStream::connect(&addr)?;
     let mut writer = BufWriter::new(&stream);
+
+    // Prepending the command length and sending to server
+    let cmd = format!("{}\r\n{cmd_to_send}", cmd_to_send.len());
     writer.write_all(cmd.as_bytes())?;
     writer.flush()?;
-    debug!(cmd = cmd, server_addr = addr, "Sent command to the server");
+    debug!(
+        cmd = cmd,
+        cmd_bytes = cmd.len(),
+        server_addr = addr,
+        "Sent command to server"
+    );
 
+    // Reading the client response
     let mut resp = String::new();
     let mut reader = BufReader::new(&stream);
     reader.read_line(&mut resp)?;

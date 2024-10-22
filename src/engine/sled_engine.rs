@@ -1,4 +1,5 @@
 use sled;
+use tracing::error;
 
 use std::path::Path;
 
@@ -28,7 +29,13 @@ impl SledEngine {
 impl Engine for SledEngine {
     fn get(&mut self, key: String) -> Result<Option<String>> {
         match self.db.get(key)? {
-            Some(val) => Ok(Some(String::from_utf8(val.to_vec())?)),
+            Some(val) => match String::from_utf8(val.to_vec()) {
+                Ok(val) => Ok(Some(val)),
+                Err(err) => {
+                    error!(err=%err, "failed to parse value retrieved from sled engine");
+                    Ok(None)
+                }
+            },
             None => Ok(None),
         }
     }

@@ -5,7 +5,7 @@
 use rmp_serde::{decode, encode};
 use tracing::subscriber;
 
-use std::{fmt, io, num, path, string};
+use std::{fmt, io, num, path};
 
 pub mod engine;
 
@@ -26,8 +26,6 @@ pub enum KvsError {
     StripPrefixError(path::StripPrefixError),
     /// Indicates error while parsing string to int
     ParseIntError(num::ParseIntError),
-    /// Indicates an error while parsing UTF-8 to string
-    FromUtf8Error(string::FromUtf8Error),
     /// Indicates an missing log reader
     LogReaderNotFoundError(String),
     /// Indicates an error while setting the global default tracing subscriber for structured
@@ -52,7 +50,6 @@ impl fmt::Display for KvsError {
             KvsError::CliError(ref err) => write!(f, "CLI Error: {}", err),
             KvsError::StripPrefixError(ref err) => write!(f, "Strip Prefix Error: {}", err),
             KvsError::ParseIntError(ref err) => write!(f, "Parse Int Error: {}", err),
-            KvsError::FromUtf8Error(ref err) => write!(f, "From UTF-8 Error: {}", err),
             KvsError::LogReaderNotFoundError(ref err) => {
                 write!(f, "Log Reader Not Found Error: {}", err)
             }
@@ -91,12 +88,6 @@ impl From<path::StripPrefixError> for KvsError {
 impl From<num::ParseIntError> for KvsError {
     fn from(value: num::ParseIntError) -> Self {
         KvsError::ParseIntError(value)
-    }
-}
-
-impl From<string::FromUtf8Error> for KvsError {
-    fn from(value: string::FromUtf8Error) -> Self {
-        KvsError::FromUtf8Error(value)
     }
 }
 
