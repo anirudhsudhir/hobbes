@@ -1,16 +1,28 @@
 use clap::{Arg, Command};
-use tracing::info;
 use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
 
+use std::env;
 use std::io;
 
 use hobbes_kv::engine;
 use hobbes_kv::{KvsError, Result};
 
 fn main() -> Result<()> {
+    let logging_level = match env::var("LOG_LEVEL") {
+        Ok(level) => match level.as_str() {
+            "TRACE" => tracing::Level::TRACE,
+            "DEBUG" => tracing::Level::DEBUG,
+            "INFO" => tracing::Level::INFO,
+            "WARN" => tracing::Level::WARN,
+            "ERROR" => tracing::Level::ERROR,
+            _ => tracing::Level::INFO,
+        },
+        Err(_) => tracing::Level::INFO,
+    };
+
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(logging_level)
         .with_timer(time::ChronoLocal::rfc_3339())
         .with_target(true)
         .with_writer(io::stderr)
@@ -44,8 +56,18 @@ fn main() -> Result<()> {
         .get_one::<String>("engine")
         .ok_or_else(|| KvsError::CliError(String::from("failed to parse argument \"engine\"")))?;
 
-    info!("version: {}", env!("CARGO_PKG_VERSION"));
-    info!(addr, engine);
+    println!(
+        r"
+    __          __    __
+   / /_  ____  / /_  / /_  ___  _____
+  / __ \/ __ \/ __ \/ __ \/ _ \/ ___/
+ / / / / /_/ / /_/ / /_/ /  __(__  )
+/_/ /_/\____/_.___/_.___/\___/____/
+
+    "
+    );
+    println!("Using engine [{engine}] and serving at address {addr}");
+    println!("Version [{}]", env!("CARGO_PKG_VERSION"));
 
     engine::start_server(addr, engine)?;
 

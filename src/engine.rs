@@ -9,9 +9,10 @@ use super::{KvsError, Result};
 pub mod hobbes;
 pub mod sled_engine;
 
-const DB_PARENT_PATH: &str = "./";
-const HOBBES_DB_PATH: &str = "./hobbes-store";
-const SLED_DB_PATH: &str = "./sled-store";
+const DB_PARENT_PATH: &str = "";
+const HOBBES_DB_PATH: &str = "hobbes-store/logs";
+const HOBBES_COMPACTED_LOGS_PATH: &str = "hobbes-store/compacted-logs";
+const SLED_DB_PATH: &str = "sled-store";
 
 pub trait Engine {
     fn set(&mut self, key: String, value: String) -> Result<()>;
@@ -20,8 +21,6 @@ pub trait Engine {
 }
 
 pub fn start_server(addr: &str, engine: &str) -> Result<()> {
-    info!(server_addr = addr, "starting hobbes server");
-
     let mut store: Box<dyn Engine> = match engine {
         "hobbes" => Box::new(hobbes::HobbesEngine::open(Path::new(&DB_PARENT_PATH))?),
         "sled" => Box::new(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
@@ -32,6 +31,7 @@ pub fn start_server(addr: &str, engine: &str) -> Result<()> {
     for stream in listener.incoming() {
         let tcp_stream = stream?;
         let mut reader = BufReader::new(&tcp_stream);
+
         info!("==============================================");
         info!(client_addr = %tcp_stream.peer_addr()?, msg = "client connected");
 

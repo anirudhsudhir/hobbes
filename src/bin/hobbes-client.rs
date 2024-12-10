@@ -3,6 +3,7 @@ use tracing::debug;
 use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
 
+use std::env;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
 use std::process;
@@ -10,11 +11,22 @@ use std::process;
 use hobbes_kv::{KvsError, Result};
 
 fn main() -> Result<()> {
+    let logging_level = match env::var("LOG_LEVEL") {
+        Ok(level) => match level.as_str() {
+            "TRACE" => tracing::Level::TRACE,
+            "DEBUG" => tracing::Level::DEBUG,
+            "INFO" => tracing::Level::INFO,
+            "WARN" => tracing::Level::WARN,
+            "ERROR" => tracing::Level::ERROR,
+            _ => tracing::Level::INFO,
+        },
+        Err(_) => tracing::Level::INFO,
+    };
+
     let subscriber = FmtSubscriber::builder()
-        // .with_max_level(tracing::Level::TRACE)
+        .with_max_level(logging_level)
         .with_timer(time::ChronoLocal::rfc_3339())
         .with_target(true)
-        .with_test_writer()
         .with_writer(io::stdout)
         .finish();
 

@@ -53,6 +53,21 @@ hobbes get foo
 hobbes rm foo
 ```
 
+- Set the logging level via environment variables
+
+```txt
+LOG_LEVEL=TRACE
+
+Available levels
+  - TRACE
+  - DEBUG
+  - INFO
+  - WARN
+  - ERROR
+
+The default logging level is INFO
+```
+
 ## Features
 
 - Single mutable and multiple immutable logs: The store uses the Bitcask architecture. At any instance, the storage directory contains a mutable write-ahead log as well as several immutable logs

@@ -34,7 +34,7 @@ fn client_cli_invalid_get() {
 
     Command::cargo_bin("hobbes")
         .unwrap()
-        .args(&["get", "key", "--addr", "invalid-addr"])
+        .args(&["--addr", "invalid-addr", "get", "key"])
         .current_dir(&temp_dir)
         .assert()
         .failure();
@@ -73,7 +73,7 @@ fn client_cli_invalid_set() {
 
     Command::cargo_bin("hobbes")
         .unwrap()
-        .args(&["set", "key", "value", "--addr", "invalid-addr"])
+        .args(&["--addr", "invalid-addr", "set", "key", "value"])
         .current_dir(&temp_dir)
         .assert()
         .failure();
@@ -326,6 +326,7 @@ fn cli_access_server(engine: &str, addr: &str) {
 }
 
 #[test]
+// #[ignore]
 fn cli_access_server_hobbes_engine() {
     cli_access_server("hobbes", "127.0.0.1:4004");
 }

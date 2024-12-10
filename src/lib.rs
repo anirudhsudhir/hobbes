@@ -22,6 +22,8 @@ pub enum KvsError {
     KeyNotFoundError,
     /// Indicates CLI errors
     CliError(String),
+    /// Indicates compaction errors
+    CompactionError(String),
     /// Indicates error while stripping filepath prefixes
     StripPrefixError(path::StripPrefixError),
     /// Indicates error while parsing string to int
@@ -48,6 +50,7 @@ impl fmt::Display for KvsError {
             KvsError::DeserializationError(ref err) => write!(f, "Deserialization error: {}", err),
             KvsError::KeyNotFoundError => write!(f, "Key not found",),
             KvsError::CliError(ref err) => write!(f, "CLI Error: {}", err),
+            KvsError::CompactionError(ref err) => write!(f, "Compaction Error: {}", err),
             KvsError::StripPrefixError(ref err) => write!(f, "Strip Prefix Error: {}", err),
             KvsError::ParseIntError(ref err) => write!(f, "Parse Int Error: {}", err),
             KvsError::LogReaderNotFoundError(ref err) => {
