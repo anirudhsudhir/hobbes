@@ -1,17 +1,19 @@
+use anyhow::{anyhow, Result};
 use tracing::{debug, error, info, warn};
 
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 
-use super::{KvsError, Result};
+use super::KvsError;
 
 pub mod hobbes;
 pub mod sled_engine;
 
 const DB_PARENT_PATH: &str = "";
-const HOBBES_DB_PATH: &str = "hobbes-store/logs";
-const HOBBES_COMPACTED_LOGS_PATH: &str = "hobbes-store/compacted-logs";
+const HOBBES_LOGS_PATH: &str = "hobbes-store/logs";
+const HOBBES_DB_PATH: &str = "hobbes-store/";
+const HOBBES_COMPACTED_LOGS_SUBPATH: &str = "compacted-logs/";
 const SLED_DB_PATH: &str = "sled-store";
 
 pub trait Engine {
@@ -24,7 +26,7 @@ pub fn start_server(addr: &str, engine: &str) -> Result<()> {
     let mut store: Box<dyn Engine> = match engine {
         "hobbes" => Box::new(hobbes::HobbesEngine::open(Path::new(&DB_PARENT_PATH))?),
         "sled" => Box::new(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
-        _ => Err(KvsError::CliError(String::from("invalid engine")))?,
+        _ => Err(anyhow!(KvsError::CliError(String::from("invalid engine"))))?,
     };
     let listener = TcpListener::bind(addr)?;
 
@@ -83,9 +85,9 @@ pub fn start_server(addr: &str, engine: &str) -> Result<()> {
         );
 
         let mut msg = cmd_str.split("\r\n");
-        let cmd = msg.next().ok_or(KvsError::CliError(String::from(
+        let cmd = msg.next().ok_or(anyhow!(KvsError::CliError(String::from(
             "Missing command in request",
-        )))?;
+        ))))?;
 
         let mut resp = String::from("Success");
         match cmd {
@@ -121,9 +123,9 @@ fn handle_get<'a>(
 ) -> Result<String> {
     let key = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(anyhow!(KvsError::CliError(String::from(
             "Missing key in GET command",
-        )))?
+        ))))?
         .trim();
     info!(cmd = "GET", key = key, "Received command");
 
@@ -142,15 +144,15 @@ fn handle_set<'a>(
 ) -> Result<()> {
     let key = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(anyhow!(KvsError::CliError(String::from(
             "Missing key in SET command",
-        )))?
+        ))))?
         .trim();
     let val = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(anyhow!(KvsError::CliError(String::from(
             "Missing value in SET command",
-        )))?
+        ))))?
         .trim();
     info!(cmd = "SET", key = key, val = val, "Received command");
 
@@ -166,9 +168,9 @@ fn handle_rm<'a>(
 ) -> Result<String> {
     let key = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(anyhow!(KvsError::CliError(String::from(
             "Missing key in RM command",
-        )))?
+        ))))?
         .trim();
     info!(cmd = "RM", key = key, "Received command");
 
@@ -177,8 +179,8 @@ fn handle_rm<'a>(
             info!(cmd = "RM", key = key, "Successful query");
             Ok(String::from("Success"))
         }
-        Err(err) => match err {
-            KvsError::KeyNotFoundError => {
+        Err(err) => match err.downcast_ref() {
+            Some(KvsError::KeyNotFoundError) => {
                 info!(cmd = "RM", key = key, "Key not found");
                 Ok(String::from("Key not found"))
             }

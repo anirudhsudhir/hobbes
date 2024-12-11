@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context, Result};
 use rmp_serde::{self, decode};
 use tracing::debug;
 
@@ -7,7 +8,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use super::{Engine, KvsError, Result, HOBBES_DB_PATH, SLED_DB_PATH};
+use crate::engine::HOBBES_DB_PATH;
+
+use super::{Engine, KvsError, HOBBES_LOGS_PATH, SLED_DB_PATH};
 
 mod compaction;
 
@@ -22,8 +25,9 @@ struct LogEntry {
 pub struct HobbesEngine {
     mem_index: HashMap<String, ValueMetadata>,
     logs_dir: PathBuf,
+    db_dir: PathBuf,
     log_writer: Option<File>,
-    log_readers: HashMap<u64, BufReader<File>>,
+    log_readers: Option<HashMap<u64, BufReader<File>>>,
     current_log_id: u64,
 }
 
@@ -42,18 +46,19 @@ impl HobbesEngine {
         // Check if a sled-store already exists
         let sled_store_dir = logs_dir_arg.join(SLED_DB_PATH);
         if Path::is_dir(&sled_store_dir) {
-            Err(KvsError::CliError(String::from(
+            Err(anyhow!(KvsError::CliError(String::from(
                 "sled storage engine used previously, using the hobbes engine is an invalid operation",
-            )))?
+            ))))?
         }
 
-        let logs_dir = logs_dir_arg.join(HOBBES_DB_PATH);
+        let logs_dir = logs_dir_arg.join(HOBBES_LOGS_PATH);
+        let db_dir = logs_dir_arg.join(HOBBES_DB_PATH);
 
         // Check if the user-provided path is without extensions
         if Path::extension(logs_dir_arg).is_some() {
-            return Err(KvsError::CliError(String::from(
+            return Err(anyhow!(KvsError::CliError(String::from(
                 "invalid log directory path, contains an extension",
-            )));
+            ))));
         }
 
         let mut log_readers = HashMap::new();
@@ -69,12 +74,17 @@ impl HobbesEngine {
                 let log_id = log_id_path
                     .strip_prefix(&logs_dir)?
                     .to_str()
-                    .ok_or(KvsError::CliError(String::from(
+                    .ok_or(anyhow!(KvsError::CliError(String::from(
                         "invalid log filename, {err}",
-                    )))?
+                    ))))?
                     .parse::<u64>()?;
 
-                log_readers.insert(log_id, BufReader::new(File::open(log_path)?));
+                log_readers.insert(
+                    log_id,
+                    BufReader::new(File::open(&log_path).with_context(|| {
+                        format!("[DB_INIT] Error while initialising log readers - log reader path -> {:?}", &log_path)
+                    })?),
+                );
                 if log_id > latest_file_id {
                     latest_file_id = log_id;
                 }
@@ -90,18 +100,16 @@ impl HobbesEngine {
         if latest_file_id != 0 {
             let write_log_path =
                 logs_dir.join(PathBuf::from(latest_file_id.to_string() + LOG_EXTENSION));
-            log_writer = OpenOptions::new().append(true).open(&write_log_path)?;
+            log_writer = OpenOptions::new()
+                .append(true)
+                .open(&write_log_path)
+                .with_context(|| {
+                    format!("[DB_INIT] Error while opening an existing mutable append log - log writer path -> {:?}", write_log_path)
+                })?;
 
             // Replaying logs to recreate index
 
-            for i in 1..latest_file_id + 1 {
-                let mut log_reader = log_readers.get_mut(&i).ok_or_else(|| {
-                    KvsError::LogReaderNotFoundError(format!(
-                        "Log {} does not have a valid reader",
-                        i
-                    ))
-                })?;
-
+            for (i, mut log_reader) in log_readers.iter_mut() {
                 let mut offset = log_reader.stream_position()?;
 
                 while let Ok(decode_cmd) = decode::from_read(&mut log_reader) {
@@ -112,7 +120,7 @@ impl HobbesEngine {
                             cmd.key,
                             ValueMetadata {
                                 log_pointer: offset,
-                                log_id: i,
+                                log_id: i.to_owned(),
                             },
                         ),
                     };
@@ -127,16 +135,23 @@ impl HobbesEngine {
             log_writer = OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(&write_log_path)?;
-            log_readers.insert(1, BufReader::new(File::open(&write_log_path)?));
+                .open(&write_log_path)
+                .with_context(|| {
+                    format!("[DB_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path)
+                })?;
+            log_readers.insert(1, BufReader::new(File::open(&write_log_path)
+                .with_context(|| {
+                    format!("[DB_INIT] Error while creating a reader for the new mutable append log created - log reader path -> {:?}", write_log_path)
+                })?));
             latest_file_id = 1;
         }
 
         Ok(HobbesEngine {
             mem_index,
             logs_dir,
+            db_dir,
             log_writer: Some(log_writer),
-            log_readers,
+            log_readers: Some(log_readers),
             current_log_id: latest_file_id,
         })
     }
@@ -146,9 +161,13 @@ impl Engine for HobbesEngine {
     /// Store a key-value pair
     fn set(&mut self, key: String, value: String) -> Result<()> {
         debug!(
-            " \n\n SET \n key - {key} value - {value} self {:?} \n",
+            operation = "SET",
+            key = key,
+            value = value,
+            "HobbesEngine = {:?}",
             self
         );
+
         let cmd = serialize_command(&LogEntry {
             key: key.clone(),
             val: value.clone(),
@@ -161,19 +180,12 @@ impl Engine for HobbesEngine {
         let log_writer = self.log_writer.as_mut().unwrap();
 
         let offset = log_writer.metadata()?.len();
-        debug!(
-            " \n\n SET \n key - {key} value - {value} file write position {} file len {} \n",
-            offset,
-            log_writer.metadata()?.len(),
-        );
 
         log_writer.seek(SeekFrom::Start(offset))?;
         log_writer.write_all(&cmd)?;
 
         self.mem_index.insert(
-            // TODO: for debug added clone
-            // key,
-            key.clone(),
+            key,
             ValueMetadata {
                 log_pointer: offset,
                 log_id: self.current_log_id,
@@ -200,40 +212,30 @@ impl Engine for HobbesEngine {
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), Some("Bar".to_owned()));
     /// ```
     fn get(&mut self, key: String) -> Result<Option<String>> {
-        debug!(" \n\n GET key - {key} self {:?} \n", self);
+        debug!(operation = "GET", key = key, "HobbesEngine = {:?}", self);
+
+        if self.log_readers.is_none() {
+            self.log_readers_init()?;
+        }
         let value_metadata_opt = self.mem_index.get(&key);
 
         match value_metadata_opt {
             Some(value_metadata) => {
-                // let mut requested_log_reader = self
-                //     .log_readers
-                //     .get_mut(&value_metadata.log_id)
-                //     .ok_or_else(|| {
-                //         KvsError::LogReaderNotFoundError(format!(
-                //             "Log {} does not have a valid reader",
-                //             value_metadata.log_id
-                //         ))
-                //     })?;
-                //
-                // let mut temp_store: Vec<u8> = Vec::new();
-                // requested_log_reader.seek(SeekFrom::Start(0))?;
-                // requested_log_reader.read_to_end(&mut temp_store)?;
-                // debug!("log contents requested_log_reader = {:?}", temp_store);
-                // requested_log_reader.seek(SeekFrom::Start(value_metadata.log_pointer))?;
-                // debug!(
-                //     " \n\n GET key - {key} file marker {:?} \n",
-                //     requested_log_reader.stream_position()?,
-                // );
-                // let cmd: LogEntry = decode::from_read(&mut requested_log_reader)?;
+                let mut requested_log_reader = self
+                    .log_readers
+                    .as_mut()
+                    .unwrap()
+                    .get_mut(&value_metadata.log_id)
+                    .ok_or_else(|| {
+                        anyhow!(KvsError::LogReaderNotFoundError(format!(
+                            "Log {} does not have a valid reader",
+                            value_metadata.log_id
+                        )))
+                    })?;
 
-                let log_path = self.logs_dir.join(PathBuf::from(format!(
-                    "{}{LOG_EXTENSION}",
-                    value_metadata.log_id
-                )));
-                let mut log_read_handle = fs::File::open(log_path)?;
-                log_read_handle.seek(SeekFrom::Start(value_metadata.log_pointer))?;
+                requested_log_reader.seek(SeekFrom::Start(value_metadata.log_pointer))?;
+                let cmd: LogEntry = decode::from_read(&mut requested_log_reader)?;
 
-                let cmd: LogEntry = decode::from_read(&mut log_read_handle)?;
                 match cmd.val.as_str() {
                     TOMBSTONE => Ok(None),
                     _ => Ok(Some(cmd.val)),
@@ -260,15 +262,14 @@ impl Engine for HobbesEngine {
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), None);
     /// ```
     fn remove(&mut self, key: String) -> Result<()> {
-        debug!("RM \n\n {:?} \n\n", &self);
+        debug!(operation = "RM", key = key, "HobbesEngine = {:?}", self);
+
         self.mem_index
             .remove(&key)
-            .ok_or_else(|| KvsError::KeyNotFoundError)?;
+            .ok_or_else(|| anyhow!(KvsError::KeyNotFoundError))?;
 
         let cmd = serialize_command(&LogEntry {
-            // key,
-            // TODO: Clone used for debugging
-            key: key.clone(),
+            key,
             val: TOMBSTONE.to_string(),
         })?;
 
@@ -277,13 +278,7 @@ impl Engine for HobbesEngine {
         }
 
         let log_writer = self.log_writer.as_mut().unwrap();
-
         let offset = log_writer.metadata()?.len();
-        debug!(
-            " \n\n RM key - {key} file write position {} file len {} \n",
-            offset,
-            log_writer.metadata()?.len(),
-        );
 
         log_writer.seek(SeekFrom::Start(offset))?;
         log_writer.write_all(&cmd)?;
@@ -295,18 +290,64 @@ impl Engine for HobbesEngine {
 
 impl HobbesEngine {
     fn log_writer_init(&mut self) -> Result<()> {
-        let write_log_path = self.logs_dir.join(PathBuf::from(format!(
-            "{}{LOG_EXTENSION}",
-            self.current_log_id
-        )));
+        if self.log_writer.is_none() {
+            debug!(operation = "LOG_WRITER_INIT", "HobbesEngine = {:?}", self);
 
-        self.log_writer = Some(
-            fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&write_log_path)?,
-        );
+            let write_log_path = self.logs_dir.join(PathBuf::from(format!(
+                "{}{LOG_EXTENSION}",
+                self.current_log_id
+            )));
 
+            self.log_writer = Some(
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&write_log_path).with_context(|| {
+                    format!("[LOG_WRITER_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path)
+                })?
+
+            );
+
+            if self.log_readers.is_none() {
+                self.log_readers_init()?;
+            }
+
+            self.log_readers.as_mut().unwrap().insert(
+                self.current_log_id,
+                BufReader::new(fs::File::open(&write_log_path).with_context(|| {
+                    format!("[LOG_WRITER_INIT] Error while creating a reader for the new mutable append log - log reader path -> {:?}", write_log_path)
+                })?),
+            );
+        }
+
+        Ok(())
+    }
+
+    fn log_readers_init(&mut self) -> Result<()> {
+        if self.log_readers.is_none() {
+            debug!(operation = "LOG_READERS_INIT", "HobbesEngine = {:?}", self);
+
+            let mut readers = HashMap::new();
+            for entry in fs::read_dir(&self.logs_dir)? {
+                let log_path = entry?.path();
+                let mut log_id_path = log_path.clone();
+                log_id_path.set_extension("");
+
+                let log_id = log_id_path
+                    .strip_prefix(&self.logs_dir)?
+                    .to_str()
+                    .ok_or(anyhow!(KvsError::CliError(String::from(
+                        "invalid log filename, {err}",
+                    ))))?
+                    .parse::<u64>()?;
+
+                readers.insert(log_id, BufReader::new(File::open(&log_path).with_context(|| {
+                    format!("[LOG_READERS_INIT] Error while creating a new reader - log reader path -> {:?}", &log_path)
+                })?));
+            }
+
+            self.log_readers = Some(readers);
+        }
         Ok(())
     }
 }

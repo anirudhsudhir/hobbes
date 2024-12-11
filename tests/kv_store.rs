@@ -1,6 +1,6 @@
+use anyhow::Result;
+
 use hobbes_kv::engine::hobbes::HobbesEngine;
-use hobbes_kv::Result;
-// use kvs::KvsEngine;
 use tempfile::TempDir;
 use walkdir::WalkDir;
 

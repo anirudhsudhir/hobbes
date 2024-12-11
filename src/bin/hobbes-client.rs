@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use tracing::debug;
+use tracing::trace;
 use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
 
@@ -151,7 +151,7 @@ fn send_cmd(cmd_to_send: String, addr: String) -> Result<String> {
     let cmd = format!("{}\r\n{cmd_to_send}", cmd_to_send.len());
     writer.write_all(cmd.as_bytes())?;
     writer.flush()?;
-    debug!(
+    trace!(
         cmd = cmd,
         cmd_bytes = cmd.len(),
         server_addr = addr,
@@ -163,7 +163,7 @@ fn send_cmd(cmd_to_send: String, addr: String) -> Result<String> {
     let mut reader = BufReader::new(&stream);
     reader.read_line(&mut resp)?;
 
-    debug!(
+    trace!(
         cmd = cmd,
         server_addr = addr,
         response = resp,
