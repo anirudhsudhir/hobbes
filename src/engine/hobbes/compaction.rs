@@ -79,10 +79,6 @@ impl HobbesEngine {
             current_compact_log_writer.seek(SeekFrom::Start(offset))?;
             current_compact_log_writer.write_all(&cmd)?;
 
-            debug!(
-                operation = "COMPACTION",
-                "compacted key '{k}' to file {:?}", current_compact_log_path
-            );
             updated_index.insert(
                 k,
                 ValueMetadata {
@@ -91,6 +87,12 @@ impl HobbesEngine {
                     timestamp: value_metadata.timestamp,
                 },
             );
+            // debug!(
+            //     operation = "COMPACTION",
+            //     "compacted key \"{k}\" with value \"{val}\" to file {:?}  at offset {offset}\n getting from mem_index - {:?}",
+            //     current_compact_log_path,
+            //     updated_index.get(&k)
+            // );
         }
 
         // Updating KvStore

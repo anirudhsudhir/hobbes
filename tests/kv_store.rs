@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 
 use hobbes_kv::engine::hobbes::HobbesEngine;
@@ -88,12 +86,10 @@ fn remove_key() -> Result<()> {
 // Insert data until total size of the directory decreases.
 // Test data correctness after compaction.
 #[test]
-#[ignore]
 fn compaction() -> Result<()> {
-    // let temp_dir = TempDir::new().expect("unable to create temporary working directory");
-    let temp_dir = PathBuf::from("./");
-    // let mut store = HobbesEngine::open(temp_dir.path())?;
-    let mut store = HobbesEngine::open(&temp_dir)?;
+    let temp_dir = TempDir::new().expect("unable to create temporary working directory");
+    let mut store = HobbesEngine::open(temp_dir.path())?;
+    let count = 1000;
 
     let dir_size = || {
         // let entries = WalkDir::new(temp_dir.path()).into_iter();
@@ -108,8 +104,8 @@ fn compaction() -> Result<()> {
     };
 
     let mut current_size = dir_size();
-    for iter in 0..1000 {
-        for key_id in 0..1000 {
+    for iter in 0..count {
+        for key_id in 0..count {
             let key = format!("key{}", key_id);
             let value = format!("{}", iter);
             store.set(key, value)?;
@@ -124,17 +120,15 @@ fn compaction() -> Result<()> {
 
         drop(store);
         // reopen and check content
-        // let mut store = HobbesEngine::open(temp_dir.path())?;
-        let mut store = HobbesEngine::open(&temp_dir)?;
-        for key_id in 0..1000 {
+        let mut store = HobbesEngine::open(temp_dir.path())?;
+        for key_id in 0..count {
             let key = format!("key{}", key_id);
-            // assert_eq!(store.get(key)?, Some(format!("{}", iter)));
-            if store.get(key.clone())? != Some(format!("{}", iter)) {
-                store.store_debug();
+            let store_val = store.get(key.clone())?;
+            if store_val != Some(format!("{}", iter)) {
                 panic!(
-                    "key = {}, store.get = {:?}, expected val = {:?}",
+                    "key = {}, store_val = {:?}, expected val = {:?}",
                     &key,
-                    store.get(key.clone())?,
+                    store_val,
                     Some(format!("{}", iter))
                 );
             }

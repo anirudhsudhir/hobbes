@@ -147,6 +147,7 @@ impl HobbesEngine {
                         let mem_cmd: &ValueMetadata = mem_cmd;
 
                         if cmd.timestamp < mem_cmd.timestamp {
+                            offset = log_reader.stream_position()?;
                             continue;
                         }
                     }
@@ -184,21 +185,14 @@ impl HobbesEngine {
             latest_file_id = 1;
         }
 
-        //TODO: explicit return for debugging
-
-        let ret = HobbesEngine {
+        Ok(HobbesEngine {
             mem_index,
             logs_dir,
             db_dir,
             log_writer: Some(log_writer),
             log_readers: Some(log_readers),
             current_log_id: latest_file_id,
-        };
-        // dbg!("AFTER DB INIT -> START LOGGING");
-        // dbg!(&ret);
-        // dbg!("AFTER DB INIT -> STOP LOGGING");
-
-        Ok(ret)
+        })
     }
 }
 
@@ -225,8 +219,7 @@ impl Engine for HobbesEngine {
         log_writer.write_all(&cmd)?;
 
         self.mem_index.insert(
-            //TODO: Clone used for debugging only
-            key.clone(),
+            key,
             ValueMetadata {
                 log_pointer: offset,
                 log_id: self.current_log_id,
@@ -234,18 +227,17 @@ impl Engine for HobbesEngine {
             },
         );
 
-        let get_val = self.get(key.clone())?;
-
-        trace!(
-            operation = "SET",
-            key = key,
-            value = value,
-            "\n\n key as bytes = {:?} \n added_to_mem_index => log_pointer = {offset} log_id = {} \n retrieving from mem_index = {:?} \n performing a get on the key = {:?} \n\n",
-            key.as_bytes(),
-            self.current_log_id,
-            self.mem_index.get(&key),
-            get_val
-        );
+        // let get_val = self.get(key.clone())?;
+        // trace!(
+        //     operation = "SET",
+        //     key = key,
+        //     value = value,
+        //     "\n\n key as bytes = {:?} \n added_to_mem_index => log_pointer = {offset} log_id = {} \n retrieving from mem_index = {:?} \n performing a get on the key = {:?} \n\n",
+        //     key.as_bytes(),
+        //     self.current_log_id,
+        //     self.mem_index.get(&key),
+        //     get_val
+        // );
 
         self.compaction_check()?;
 
@@ -411,11 +403,6 @@ impl HobbesEngine {
             }
             None => Ok(None),
         }
-    }
-
-    // TODO: for debugging
-    pub fn store_debug(&self) {
-        dbg!(&self);
     }
 }
 
