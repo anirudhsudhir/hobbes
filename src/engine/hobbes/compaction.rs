@@ -6,7 +6,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
-use crate::engine::{Engine, HOBBES_COMPACTED_LOGS_SUBPATH};
+use crate::engine::HOBBES_COMPACTED_LOGS_SUBPATH;
 use crate::KvsError;
 
 use super::{serialize_command, HobbesEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION};
@@ -15,10 +15,7 @@ const MAX_FILE_SIZE: u64 = 1000;
 
 impl HobbesEngine {
     fn compaction_manager(&mut self) -> Result<()> {
-        debug!(
-            operation = "COMPACTION",
-            "HobbesEngine Pre-Compaction = {:?}", &self
-        );
+        debug!(operation = "COMPACTION");
 
         let hobbes_compacted_logs_path = self
             .db_dir
@@ -66,16 +63,17 @@ impl HobbesEngine {
                 offset = 0;
             }
 
-            let val = self
-                .get(k.clone())?
-                .ok_or(anyhow!(KvsError::CompactionError(format!(
-                    "{k} present in index not found on disk while compacting!"
-                ))))?;
+            let (val, value_metadata) =
+                self.get_val_metadata(k.clone())?
+                    .ok_or(anyhow!(KvsError::CompactionError(format!(
+                        "{k} present in index not found on disk while compacting!"
+                    ))))?;
 
             // Get value of key and serialise
             let cmd = serialize_command(&LogEntry {
                 key: k.clone(),
                 val,
+                timestamp: value_metadata.timestamp,
             })?;
 
             current_compact_log_writer.seek(SeekFrom::Start(offset))?;
@@ -90,6 +88,7 @@ impl HobbesEngine {
                 ValueMetadata {
                     log_pointer: offset,
                     log_id: current_compact_log_id,
+                    timestamp: value_metadata.timestamp,
                 },
             );
         }
@@ -112,11 +111,6 @@ impl HobbesEngine {
         self.mem_index = updated_index;
         self.current_log_id = current_compact_log_id + 1;
         self.log_writer = None;
-
-        debug!(
-            operation = "COMPACTION",
-            "HobbesEngine Post-Compaction = {:?}", &self
-        );
 
         Ok(())
     }

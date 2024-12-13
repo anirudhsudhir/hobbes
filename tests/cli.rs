@@ -327,7 +327,6 @@ fn cli_access_server(engine: &str, addr: &str) {
 }
 
 #[test]
-// #[ignore]
 fn cli_access_server_hobbes_engine() {
     cli_access_server("hobbes", "127.0.0.1:4004");
 }

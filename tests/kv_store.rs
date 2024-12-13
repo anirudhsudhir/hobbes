@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 
 use hobbes_kv::engine::hobbes::HobbesEngine;
@@ -88,11 +90,14 @@ fn remove_key() -> Result<()> {
 #[test]
 #[ignore]
 fn compaction() -> Result<()> {
-    let temp_dir = TempDir::new().expect("unable to create temporary working directory");
-    let mut store = HobbesEngine::open(temp_dir.path())?;
+    // let temp_dir = TempDir::new().expect("unable to create temporary working directory");
+    let temp_dir = PathBuf::from("./");
+    // let mut store = HobbesEngine::open(temp_dir.path())?;
+    let mut store = HobbesEngine::open(&temp_dir)?;
 
     let dir_size = || {
-        let entries = WalkDir::new(temp_dir.path()).into_iter();
+        // let entries = WalkDir::new(temp_dir.path()).into_iter();
+        let entries = WalkDir::new(&temp_dir).into_iter();
         let len: walkdir::Result<u64> = entries
             .map(|res| {
                 res.and_then(|entry| entry.metadata())
@@ -119,10 +124,20 @@ fn compaction() -> Result<()> {
 
         drop(store);
         // reopen and check content
-        let mut store = HobbesEngine::open(temp_dir.path())?;
+        // let mut store = HobbesEngine::open(temp_dir.path())?;
+        let mut store = HobbesEngine::open(&temp_dir)?;
         for key_id in 0..1000 {
             let key = format!("key{}", key_id);
-            assert_eq!(store.get(key)?, Some(format!("{}", iter)));
+            // assert_eq!(store.get(key)?, Some(format!("{}", iter)));
+            if store.get(key.clone())? != Some(format!("{}", iter)) {
+                store.store_debug();
+                panic!(
+                    "key = {}, store.get = {:?}, expected val = {:?}",
+                    &key,
+                    store.get(key.clone())?,
+                    Some(format!("{}", iter))
+                );
+            }
         }
         return Ok(());
     }
