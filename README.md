@@ -94,3 +94,9 @@ echo "9\r\nRM\r\nfoo\r\n" | nc localhost 4000
 The length of the command is prepended before being sent. For instance, `GET\r\nfoo\r\n` is 10 bytes long. `10\r\n` is prefixed to the command and sent.
 
 The command and arguments are separated and terminated by a carriage return line feed (CRLF)(`\r\n`).
+
+## Benchmarks
+
+A benchmark of the hobbes and sled storage engines with 500 keys of variable sizes and a compaction threshold of 1 mb (the compaction is triggered when the log size exceeds 1 mb).
+
+![Benchmark hobbes and sled with 500 keys and a compaction threshold of 1 mb](.github/img/bench_500keys_compaction_1mb.png)

@@ -11,7 +11,7 @@ use crate::KvsError;
 
 use super::{serialize_command, HobbesEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION};
 
-const MAX_FILE_SIZE: u64 = 1000;
+const MAX_FILE_SIZE: u64 = 1000000;
 
 impl HobbesEngine {
     fn compaction_manager(&mut self) -> Result<()> {
