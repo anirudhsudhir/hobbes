@@ -42,20 +42,24 @@ impl Engine for SledEngine {
     }
 
     fn set(&mut self, key: String, value: String) -> Result<()> {
-        let set_ret = self.db.insert(key.as_bytes(), value.as_bytes());
-        self.db.flush()?;
+        let set_ret = self.db.insert(key, value.as_bytes());
         match set_ret {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.db.flush()?;
+                Ok(())
+            }
             Err(err) => Err(anyhow!(KvsError::SledDbError(err))),
         }
     }
 
     fn remove(&mut self, key: String) -> Result<()> {
         let rm_ret = self.db.remove(key.as_bytes());
-        self.db.flush()?;
         match rm_ret {
             Ok(opt) => match opt {
-                Some(_) => Ok(()),
+                Some(_) => {
+                    self.db.flush()?;
+                    Ok(())
+                }
                 None => Err(anyhow!(KvsError::KeyNotFoundError)),
             },
             Err(err) => Err(anyhow!(KvsError::SledDbError(err))),
