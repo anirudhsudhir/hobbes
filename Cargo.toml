@@ -1,5 +1,5 @@
 [package]
-name = "hobbes_kv"
+name = "hobbes"
 version = "0.1.0"
 edition = "2021"
 description = "A Bitcask-like log structured key-value store written in Rust"

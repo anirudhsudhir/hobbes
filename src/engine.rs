@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::KvsError;
 
-pub mod hobbes;
+pub mod bitcask;
 pub mod sled_engine;
 
 const DB_PARENT_PATH: &str = "";
@@ -24,7 +24,7 @@ pub trait Engine {
 
 pub fn start_server(addr: &str, engine: &str) -> Result<()> {
     let mut store: Box<dyn Engine> = match engine {
-        "hobbes" => Box::new(hobbes::HobbesEngine::open(Path::new(&DB_PARENT_PATH))?),
+        "hobbes" => Box::new(bitcask::BitcaskEngine::open(Path::new(&DB_PARENT_PATH))?),
         "sled" => Box::new(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
         _ => Err(anyhow!(KvsError::CliError(String::from("invalid engine"))))?,
     };

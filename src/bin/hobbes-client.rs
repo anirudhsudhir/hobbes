@@ -8,7 +8,7 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
 use std::process;
 
-use hobbes_kv::{KvsError, Result};
+use hobbes::{KvsError, Result};
 
 fn main() -> Result<()> {
     let logging_level = match env::var("LOG_LEVEL") {

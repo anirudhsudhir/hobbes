@@ -27,9 +27,12 @@ struct LogEntry {
 
 /// KvStore holds the in-memory index with keys and log pointers
 #[derive(Debug)]
-pub struct HobbesEngine {
+pub struct BitcaskEngine {
     mem_index: HashMap<String, ValueMetadata>,
+    // logs_dir holds the path to the directory containing active logs
     logs_dir: PathBuf,
+    // db_dir holds the path to the directory used by the database,
+    // including the active and compacted logs sub-directories
     db_dir: PathBuf,
     log_writer: Option<File>,
     log_readers: Option<HashMap<u64, BufReader<File>>>,
@@ -46,9 +49,9 @@ struct ValueMetadata {
 const TOMBSTONE: &str = "!tomb!";
 const LOG_EXTENSION: &str = ".db";
 
-impl HobbesEngine {
-    /// Open an instance of HobbesEngine at the specified directory
-    pub fn open(logs_dir_arg: &Path) -> Result<HobbesEngine> {
+impl BitcaskEngine {
+    /// Open an instance of BitcaskEngine at the specified directory
+    pub fn open(logs_dir_arg: &Path) -> Result<BitcaskEngine> {
         let logging_level = match env::var("LOG_LEVEL") {
             Ok(level) => match level.as_str() {
                 "TRACE" => tracing::Level::TRACE,
@@ -185,7 +188,7 @@ impl HobbesEngine {
             latest_file_id = 1;
         }
 
-        Ok(HobbesEngine {
+        Ok(BitcaskEngine {
             mem_index,
             logs_dir,
             db_dir,
@@ -196,7 +199,7 @@ impl HobbesEngine {
     }
 }
 
-impl Engine for HobbesEngine {
+impl Engine for BitcaskEngine {
     /// Store a key-value pair
     fn set(&mut self, key: String, value: String) -> Result<()> {
         trace!(operation = "SET", key = key, value = value);
@@ -250,10 +253,10 @@ impl Engine for HobbesEngine {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use hobbes_kv::engine::hobbes::HobbesEngine;
-    /// use hobbes_kv::engine::Engine;
+    /// use hobbes::engine::bitcask::BitcaskEngine;
+    /// use hobbes::engine::Engine;
     ///
-    /// let mut kv_store = HobbesEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
+    /// let mut kv_store = BitcaskEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
     ///
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), Some("Bar".to_owned()));
@@ -272,10 +275,10 @@ impl Engine for HobbesEngine {
     /// use tempfile::TempDir;
     /// let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     ///
-    /// use hobbes_kv::engine::hobbes::HobbesEngine;
-    /// use hobbes_kv::engine::Engine;
+    /// use hobbes::engine::bitcask::BitcaskEngine;
+    /// use hobbes::engine::Engine;
     ///
-    /// let mut kv_store = HobbesEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
+    /// let mut kv_store = BitcaskEngine::open(temp_dir.path()).expect("unable to create a new KvStore");
     /// kv_store.set("Foo".to_owned(), "Bar".to_owned()).expect("unable to set key 'Foo' to value 'Bar'");
     ///
     /// kv_store.remove("Foo".to_owned());
@@ -310,7 +313,7 @@ impl Engine for HobbesEngine {
     }
 }
 
-impl HobbesEngine {
+impl BitcaskEngine {
     fn log_writer_init(&mut self) -> Result<()> {
         if self.log_writer.is_none() {
             trace!(operation = "LOG_WRITER_INIT");

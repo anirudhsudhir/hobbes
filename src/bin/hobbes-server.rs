@@ -7,8 +7,8 @@ use tracing_subscriber::FmtSubscriber;
 use std::env;
 use std::io;
 
-use hobbes_kv::engine;
-use hobbes_kv::KvsError;
+use hobbes::engine;
+use hobbes::KvsError;
 
 fn main() -> Result<()> {
     let logging_level = match env::var("LOG_LEVEL") {

@@ -9,11 +9,11 @@ use std::path::PathBuf;
 use crate::engine::HOBBES_COMPACTED_LOGS_SUBPATH;
 use crate::KvsError;
 
-use super::{serialize_command, HobbesEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION};
+use super::{serialize_command, BitcaskEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION};
 
 const MAX_FILE_SIZE: u64 = 1000000;
 
-impl HobbesEngine {
+impl BitcaskEngine {
     fn compaction_manager(&mut self) -> Result<()> {
         debug!(operation = "COMPACTION");
 

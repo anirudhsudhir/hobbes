@@ -3,7 +3,7 @@ use rand::{thread_rng, Rng};
 
 use std::{path::Path, str::FromStr};
 
-use hobbes_kv::engine::{hobbes, sled_engine, Engine};
+use hobbes::engine::{bitcask, sled_engine, Engine};
 
 const HOBBES_DB_BENCH_PATH: &str = "bench-db/hobbes-bench-db";
 const SLED_DB_BENCH_PATH: &str = "bench-db/sled-bench-db";
@@ -31,7 +31,7 @@ fn randomise(run_count: usize) -> Vec<(String, String)> {
 
 fn bench_set(c: &mut Criterion) {
     // dbg!(randomise(10));
-    let mut hobbes_eng = hobbes::HobbesEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
+    let mut hobbes_eng = bitcask::BitcaskEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
         .expect("failed to start the hobbes engine");
     let rand_vals = randomise(SET_RUN_COUNT);
     c.bench_function("hobbes set bench", |b| {
@@ -59,7 +59,7 @@ fn bench_set(c: &mut Criterion) {
 }
 
 fn bench_get(c: &mut Criterion) {
-    let mut hobbes_eng = hobbes::HobbesEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
+    let mut hobbes_eng = bitcask::BitcaskEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
         .expect("failed to start the hobbes engine");
     let rand_vals = randomise(GET_RUN_COUNT);
     for (key, val) in &rand_vals {
