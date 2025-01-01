@@ -8,6 +8,7 @@ use tracing::subscriber;
 use std::{fmt, io, num, path};
 
 pub mod engine;
+pub mod thread_pool;
 
 /// Error Types for the store
 #[derive(Debug)]
@@ -39,8 +40,6 @@ pub enum KvsError {
 
 /// Result type for the store
 pub type Result<T> = std::result::Result<T, KvsError>;
-
-pub struct KvsEngine {}
 
 impl fmt::Display for KvsError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -28,7 +28,7 @@ impl SledEngine {
 }
 
 impl Engine for SledEngine {
-    fn get(&mut self, key: String) -> Result<Option<String>> {
+    fn get(&self, key: String) -> Result<Option<String>> {
         match self.db.get(key)? {
             Some(val) => match String::from_utf8(val.to_vec()) {
                 Ok(val) => Ok(Some(val)),
@@ -41,7 +41,7 @@ impl Engine for SledEngine {
         }
     }
 
-    fn set(&mut self, key: String, value: String) -> Result<()> {
+    fn set(&self, key: String, value: String) -> Result<()> {
         let set_ret = self.db.insert(key, value.as_bytes());
         match set_ret {
             Ok(_) => {
@@ -52,7 +52,7 @@ impl Engine for SledEngine {
         }
     }
 
-    fn remove(&mut self, key: String) -> Result<()> {
+    fn remove(&self, key: String) -> Result<()> {
         let rm_ret = self.db.remove(key.as_bytes());
         match rm_ret {
             Ok(opt) => match opt {

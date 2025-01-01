@@ -11,6 +11,7 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::engine::HOBBES_DB_PATH;
 
@@ -27,7 +28,7 @@ struct LogEntry {
 
 /// KvStore holds the in-memory index with keys and log pointers
 #[derive(Debug)]
-pub struct BitcaskEngine {
+pub struct BitcaskStore {
     mem_index: HashMap<String, ValueMetadata>,
     // logs_dir holds the path to the directory containing active logs
     logs_dir: PathBuf,
@@ -44,6 +45,11 @@ struct ValueMetadata {
     log_pointer: u64,
     log_id: u64,
     timestamp: DateTime<Local>,
+}
+
+#[derive(Clone)]
+pub struct BitcaskEngine {
+    store: Arc<Mutex<BitcaskStore>>,
 }
 
 const TOMBSTONE: &str = "!tomb!";
@@ -189,19 +195,21 @@ impl BitcaskEngine {
         }
 
         Ok(BitcaskEngine {
-            mem_index,
-            logs_dir,
-            db_dir,
-            log_writer: Some(log_writer),
-            log_readers: Some(log_readers),
-            current_log_id: latest_file_id,
+            store: Arc::new(Mutex::new(BitcaskStore {
+                mem_index,
+                logs_dir,
+                db_dir,
+                log_writer: Some(log_writer),
+                log_readers: Some(log_readers),
+                current_log_id: latest_file_id,
+            })),
         })
     }
 }
 
 impl Engine for BitcaskEngine {
     /// Store a key-value pair
-    fn set(&mut self, key: String, value: String) -> Result<()> {
+    fn set(&self, key: String, value: String) -> Result<()> {
         trace!(operation = "SET", key = key, value = value);
 
         let cmd = serialize_command(&LogEntry {
@@ -210,22 +218,27 @@ impl Engine for BitcaskEngine {
             timestamp: Local::now(),
         })?;
 
-        if self.log_writer.is_none() {
-            self.log_writer_init()?;
+        //TODO: dont unwrap the error
+        let store_mutex = self.store.clone();
+        let mut bitcask_store = store_mutex.lock().unwrap();
+
+        if bitcask_store.log_writer.is_none() {
+            bitcask_store.log_writer_init()?;
         }
 
-        let log_writer = self.log_writer.as_mut().unwrap();
+        let log_writer = bitcask_store.log_writer.as_mut().unwrap();
 
         let offset = log_writer.metadata()?.len();
 
         log_writer.seek(SeekFrom::Start(offset))?;
         log_writer.write_all(&cmd)?;
 
-        self.mem_index.insert(
+        let current_log_id = bitcask_store.current_log_id;
+        bitcask_store.mem_index.insert(
             key,
             ValueMetadata {
                 log_pointer: offset,
-                log_id: self.current_log_id,
+                log_id: current_log_id,
                 timestamp: Local::now(),
             },
         );
@@ -242,7 +255,8 @@ impl Engine for BitcaskEngine {
         //     get_val
         // );
 
-        self.compaction_check()?;
+        drop(bitcask_store);
+        self.compaction_manager()?;
 
         Ok(())
     }
@@ -261,7 +275,7 @@ impl Engine for BitcaskEngine {
     ///
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), Some("Bar".to_owned()));
     /// ```
-    fn get(&mut self, key: String) -> Result<Option<String>> {
+    fn get(&self, key: String) -> Result<Option<String>> {
         // trace!(operation = "GET", key = key);
         match self.get_val_metadata(key)? {
             Some((val, _)) => Ok(Some(val)),
@@ -285,10 +299,15 @@ impl Engine for BitcaskEngine {
     ///
     /// assert_eq!(kv_store.get("Foo".to_owned()).expect("unable to get key 'Foo'"), None);
     /// ```
-    fn remove(&mut self, key: String) -> Result<()> {
+    fn remove(&self, key: String) -> Result<()> {
         // trace!(operation = "RM", key = key);
 
-        self.mem_index
+        //TODO: dont unwrap the error
+        let store_mutex = self.store.clone();
+        let mut bitcask_store = store_mutex.lock().unwrap();
+
+        bitcask_store
+            .mem_index
             .remove(&key)
             .ok_or_else(|| anyhow!(KvsError::KeyNotFoundError))?;
 
@@ -298,22 +317,63 @@ impl Engine for BitcaskEngine {
             timestamp: Local::now(),
         })?;
 
-        if self.log_writer.is_none() {
-            self.log_writer_init()?;
+        if bitcask_store.log_writer.is_none() {
+            bitcask_store.log_writer_init()?;
         }
 
-        let log_writer = self.log_writer.as_mut().unwrap();
+        let log_writer = bitcask_store.log_writer.as_mut().unwrap();
         let offset = log_writer.metadata()?.len();
 
         log_writer.seek(SeekFrom::Start(offset))?;
         log_writer.write_all(&cmd)?;
 
-        self.compaction_check()?;
+        drop(bitcask_store);
+        self.compaction_manager()?;
         Ok(())
     }
 }
 
 impl BitcaskEngine {
+    fn get_val_metadata(&self, key: String) -> Result<Option<(String, ValueMetadata)>> {
+        //TODO: dont unwrap the error
+        let store_mutex = self.store.clone();
+        let mut bitcask_store = store_mutex.lock().unwrap();
+
+        if bitcask_store.log_readers.is_none() {
+            bitcask_store.log_readers_init()?;
+        }
+        let value_metadata_opt = bitcask_store.mem_index.get(&key);
+
+        match value_metadata_opt {
+            Some(value_metadata) => {
+                let value_metadata = value_metadata.clone();
+
+                let mut requested_log_reader = bitcask_store
+                    .log_readers
+                    .as_mut()
+                    .unwrap()
+                    .get_mut(&value_metadata.log_id)
+                    .ok_or_else(|| {
+                        anyhow!(KvsError::LogReaderNotFoundError(format!(
+                            "Log {} does not have a valid reader",
+                            value_metadata.log_id
+                        )))
+                    })?;
+
+                requested_log_reader.seek(SeekFrom::Start(value_metadata.log_pointer))?;
+                let cmd: LogEntry = decode::from_read(&mut requested_log_reader)?;
+
+                match cmd.val.as_str() {
+                    TOMBSTONE => Ok(None),
+                    _ => Ok(Some((cmd.val, value_metadata.to_owned()))),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+impl BitcaskStore {
     fn log_writer_init(&mut self) -> Result<()> {
         if self.log_writer.is_none() {
             trace!(operation = "LOG_WRITER_INIT");
@@ -337,8 +397,9 @@ impl BitcaskEngine {
                 self.log_readers_init()?;
             }
 
+            let current_log_id = self.current_log_id;
             self.log_readers.as_mut().unwrap().insert(
-                self.current_log_id,
+                current_log_id,
                 BufReader::new(fs::File::open(&write_log_path).with_context(|| {
                     format!("[LOG_WRITER_INIT] Error while creating a reader for the new mutable append log - log reader path -> {:?}", write_log_path)
                 })?),
@@ -374,38 +435,6 @@ impl BitcaskEngine {
             self.log_readers = Some(readers);
         }
         Ok(())
-    }
-
-    fn get_val_metadata(&mut self, key: String) -> Result<Option<(String, ValueMetadata)>> {
-        if self.log_readers.is_none() {
-            self.log_readers_init()?;
-        }
-        let value_metadata_opt = self.mem_index.get(&key);
-
-        match value_metadata_opt {
-            Some(value_metadata) => {
-                let mut requested_log_reader = self
-                    .log_readers
-                    .as_mut()
-                    .unwrap()
-                    .get_mut(&value_metadata.log_id)
-                    .ok_or_else(|| {
-                        anyhow!(KvsError::LogReaderNotFoundError(format!(
-                            "Log {} does not have a valid reader",
-                            value_metadata.log_id
-                        )))
-                    })?;
-
-                requested_log_reader.seek(SeekFrom::Start(value_metadata.log_pointer))?;
-                let cmd: LogEntry = decode::from_read(&mut requested_log_reader)?;
-
-                match cmd.val.as_str() {
-                    TOMBSTONE => Ok(None),
-                    _ => Ok(Some((cmd.val, value_metadata.to_owned()))),
-                }
-            }
-            None => Ok(None),
-        }
     }
 }
 

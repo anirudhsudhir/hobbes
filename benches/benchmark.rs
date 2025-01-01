@@ -31,7 +31,7 @@ fn randomise(run_count: usize) -> Vec<(String, String)> {
 
 fn bench_set(c: &mut Criterion) {
     // dbg!(randomise(10));
-    let mut hobbes_eng = bitcask::BitcaskEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
+    let hobbes_eng = bitcask::BitcaskEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
         .expect("failed to start the hobbes engine");
     let rand_vals = randomise(SET_RUN_COUNT);
     c.bench_function("hobbes set bench", |b| {
@@ -44,7 +44,7 @@ fn bench_set(c: &mut Criterion) {
         })
     });
 
-    let mut sled_eng = sled_engine::SledEngine::open(Path::new(SLED_DB_BENCH_PATH))
+    let sled_eng = sled_engine::SledEngine::open(Path::new(SLED_DB_BENCH_PATH))
         .expect("failed to start the sled engine");
 
     c.bench_function("sled set bench", |b| {
@@ -59,7 +59,7 @@ fn bench_set(c: &mut Criterion) {
 }
 
 fn bench_get(c: &mut Criterion) {
-    let mut hobbes_eng = bitcask::BitcaskEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
+    let hobbes_eng = bitcask::BitcaskEngine::open(Path::new(HOBBES_DB_BENCH_PATH))
         .expect("failed to start the hobbes engine");
     let rand_vals = randomise(GET_RUN_COUNT);
     for (key, val) in &rand_vals {
@@ -82,7 +82,7 @@ fn bench_get(c: &mut Criterion) {
         })
     });
 
-    let mut sled_eng = sled_engine::SledEngine::open(Path::new(SLED_DB_BENCH_PATH))
+    let sled_eng = sled_engine::SledEngine::open(Path::new(SLED_DB_BENCH_PATH))
         .expect("failed to start the sled engine");
 
     for (key, val) in &rand_vals {

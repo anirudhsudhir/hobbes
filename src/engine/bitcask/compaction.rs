@@ -14,16 +14,34 @@ use super::{serialize_command, BitcaskEngine, LogEntry, Result, ValueMetadata, L
 const MAX_FILE_SIZE: u64 = 1000000;
 
 impl BitcaskEngine {
-    fn compaction_manager(&mut self) -> Result<()> {
+    pub fn compaction_manager(&self) -> Result<()> {
         debug!(operation = "COMPACTION");
 
-        let hobbes_compacted_logs_path = self
+        //TODO: dont unwrap the error
+        let store_mutex = self.store.clone();
+        let mut bitcask_store = store_mutex.lock().unwrap();
+
+        if bitcask_store.log_writer.is_none() {
+            bitcask_store.log_writer_init()?;
+        }
+        let writer_len = bitcask_store.log_writer.as_mut().unwrap().metadata()?.len();
+        if writer_len < MAX_FILE_SIZE {
+            return Ok(());
+        }
+
+        let hobbes_compacted_logs_path = bitcask_store
             .db_dir
             .join(PathBuf::from(HOBBES_COMPACTED_LOGS_SUBPATH));
 
         fs::create_dir_all(&hobbes_compacted_logs_path)?;
 
-        let mem_index_keys = self.mem_index.keys().cloned().collect::<Vec<String>>();
+        let mem_index_keys = bitcask_store
+            .mem_index
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>();
+
+        drop(bitcask_store);
 
         // The updated in-memory index
         let mut updated_index = HashMap::new();
@@ -99,33 +117,22 @@ impl BitcaskEngine {
         // TODO: Make these operations atomic
         // TODO: Handle failure when renaming compacted logs and DB crashes
 
-        self.log_readers = None;
-        // Ignoring error as directory may not exist
-        let _ = fs::remove_dir_all(&self.logs_dir);
+        let mut bitcask_store = store_mutex.lock().unwrap();
 
-        fs::rename(&hobbes_compacted_logs_path, &self.logs_dir).with_context(|| {
+        bitcask_store.log_readers = None;
+        // Ignoring error as directory may not exist
+        let _ = fs::remove_dir_all(&bitcask_store.logs_dir);
+
+        fs::rename(&hobbes_compacted_logs_path, &bitcask_store.logs_dir).with_context(|| {
             format!(
                 "[COMPACTION] Error while renaming {:?} to {:?}, Current logs dir -> {:?}",
-                hobbes_compacted_logs_path, self.logs_dir, self.logs_dir
+                hobbes_compacted_logs_path, bitcask_store.logs_dir, bitcask_store.logs_dir
             )
         })?;
 
-        self.mem_index = updated_index;
-        self.current_log_id = current_compact_log_id + 1;
-        self.log_writer = None;
-
-        Ok(())
-    }
-
-    /// Check if the current log can be compacted
-    pub fn compaction_check(&mut self) -> Result<()> {
-        if self.log_writer.is_none() {
-            self.log_writer_init()?;
-        }
-        let writer_len = self.log_writer.as_mut().unwrap().metadata()?.len();
-        if writer_len >= MAX_FILE_SIZE {
-            self.compaction_manager()?
-        }
+        bitcask_store.mem_index = updated_index;
+        bitcask_store.current_log_id = current_compact_log_id + 1;
+        bitcask_store.log_writer = None;
 
         Ok(())
     }

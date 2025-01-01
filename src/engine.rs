@@ -17,9 +17,9 @@ const HOBBES_COMPACTED_LOGS_SUBPATH: &str = "compacted-logs/";
 const SLED_DB_PATH: &str = "sled-store";
 
 pub trait Engine {
-    fn set(&mut self, key: String, value: String) -> Result<()>;
-    fn get(&mut self, key: String) -> Result<Option<String>>;
-    fn remove(&mut self, key: String) -> Result<()>;
+    fn set(&self, key: String, value: String) -> Result<()>;
+    fn get(&self, key: String) -> Result<Option<String>>;
+    fn remove(&self, key: String) -> Result<()>;
 }
 
 pub fn start_server(addr: &str, engine: &str) -> Result<()> {
