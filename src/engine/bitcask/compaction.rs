@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Context};
-use tracing::debug;
+use tracing::{debug, error};
 
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -7,7 +6,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use crate::engine::HOBBES_COMPACTED_LOGS_SUBPATH;
-use crate::KvsError;
+use crate::{KvsError, MUTEX_LOCK_ERROR};
 
 use super::{serialize_command, BitcaskEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION};
 
@@ -17,9 +16,8 @@ impl BitcaskEngine {
     pub fn compaction_manager(&self) -> Result<()> {
         debug!(operation = "COMPACTION");
 
-        //TODO: dont unwrap the error
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().unwrap();
+        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
 
         if bitcask_store.log_writer.is_none() {
             bitcask_store.log_writer_init()?;
@@ -56,8 +54,10 @@ impl BitcaskEngine {
         let mut current_compact_log_writer = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&current_compact_log_path).with_context(|| {
-                    format!("[COMPACTION] Error while creating a new compacted log writer - log writer path -> {:?}", &current_compact_log_path)
+            .open(&current_compact_log_path).map_err(|e| {
+                    error!("[COMPACTION] Error while creating a new compacted log writer - log writer path -> {:?}", &current_compact_log_path);
+                    KvsError::IoError(e)
+
                 })?;
 
         let mut offset;
@@ -75,17 +75,19 @@ impl BitcaskEngine {
                 current_compact_log_writer = OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&current_compact_log_path).with_context(|| {
-                    format!("[COMPACTION] Error while creating a new compacted log writer - log writer path -> {:?}", &current_compact_log_path)
+                    .open(&current_compact_log_path).map_err(|e| {
+                    error!("[COMPACTION] Error while creating a new compacted log writer - log writer path -> {:?}", &current_compact_log_path);
+                    KvsError::IoError(e)
+
                 })?;
                 offset = 0;
             }
 
             let (val, value_metadata) =
                 self.get_val_metadata(k.clone())?
-                    .ok_or(anyhow!(KvsError::CompactionError(format!(
+                    .ok_or(KvsError::CompactionError(format!(
                         "{k} present in index not found on disk while compacting!"
-                    ))))?;
+                    )))?;
 
             // Get value of key and serialise
             let cmd = serialize_command(&LogEntry {
@@ -117,17 +119,18 @@ impl BitcaskEngine {
         // TODO: Make these operations atomic
         // TODO: Handle failure when renaming compacted logs and DB crashes
 
-        let mut bitcask_store = store_mutex.lock().unwrap();
+        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
 
         bitcask_store.log_readers = None;
         // Ignoring error as directory may not exist
         let _ = fs::remove_dir_all(&bitcask_store.logs_dir);
 
-        fs::rename(&hobbes_compacted_logs_path, &bitcask_store.logs_dir).with_context(|| {
-            format!(
+        fs::rename(&hobbes_compacted_logs_path, &bitcask_store.logs_dir).map_err(|e| {
+            error!(
                 "[COMPACTION] Error while renaming {:?} to {:?}, Current logs dir -> {:?}",
                 hobbes_compacted_logs_path, bitcask_store.logs_dir, bitcask_store.logs_dir
-            )
+            );
+            KvsError::IoError(e)
         })?;
 
         bitcask_store.mem_index = updated_index;

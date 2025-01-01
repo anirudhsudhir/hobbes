@@ -10,6 +10,8 @@ use std::{fmt, io, num, path};
 pub mod engine;
 pub mod thread_pool;
 
+const MUTEX_LOCK_ERROR: &str = "Failed to lock mutex";
+
 /// Error Types for the store
 #[derive(Debug)]
 pub enum KvsError {
@@ -36,6 +38,8 @@ pub enum KvsError {
     SetGlobalDefaultError(subscriber::SetGlobalDefaultError),
     /// Indicates errors arising from the sled Db type
     SledDbError(sled::Error),
+    //// Indicates errors arising during network communication between server and client
+    NetworkError(String),
 }
 
 /// Result type for the store
@@ -59,6 +63,7 @@ impl fmt::Display for KvsError {
                 write!(f, "Set Global Default Error: {}", err)
             }
             KvsError::SledDbError(ref err) => write!(f, "Sled Engine Error: {}", err),
+            KvsError::NetworkError(ref err) => write!(f, "Network Error: {}", err),
         }
     }
 }

@@ -1,7 +1,6 @@
-use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local};
 use rmp_serde::{self, decode};
-use tracing::trace;
+use tracing::{error, trace};
 use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
 
@@ -14,8 +13,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::engine::HOBBES_DB_PATH;
+use crate::MUTEX_LOCK_ERROR;
 
-use super::{Engine, KvsError, HOBBES_LOGS_PATH, SLED_DB_PATH};
+use super::{Engine, KvsError, Result, HOBBES_LOGS_PATH, SLED_DB_PATH};
 
 mod compaction;
 
@@ -82,9 +82,9 @@ impl BitcaskEngine {
         // Check if a sled-store already exists
         let sled_store_dir = logs_dir_arg.join(SLED_DB_PATH);
         if Path::is_dir(&sled_store_dir) {
-            Err(anyhow!(KvsError::CliError(String::from(
+            Err(KvsError::CliError(String::from(
                 "sled storage engine used previously, using the hobbes engine is an invalid operation",
-            ))))?
+            )))?
         }
 
         let logs_dir = logs_dir_arg.join(HOBBES_LOGS_PATH);
@@ -92,9 +92,9 @@ impl BitcaskEngine {
 
         // Check if the user-provided path is without extensions
         if Path::extension(logs_dir_arg).is_some() {
-            return Err(anyhow!(KvsError::CliError(String::from(
+            Err(KvsError::CliError(String::from(
                 "invalid log directory path, contains an extension",
-            ))));
+            )))?;
         }
 
         let mut log_readers = HashMap::new();
@@ -110,15 +110,16 @@ impl BitcaskEngine {
                 let log_id = log_id_path
                     .strip_prefix(&logs_dir)?
                     .to_str()
-                    .ok_or(anyhow!(KvsError::CliError(String::from(
+                    .ok_or(KvsError::CliError(String::from(
                         "invalid log filename, {err}",
-                    ))))?
+                    )))?
                     .parse::<u64>()?;
 
                 log_readers.insert(
                     log_id,
-                    BufReader::new(File::open(&log_path).with_context(|| {
-                        format!("[DB_INIT] Error while initialising log readers - log reader path -> {:?}", &log_path)
+                    BufReader::new(File::open(&log_path).map_err(|e| {
+                        error!("[DB_INIT] Error while initialising log readers - log reader path -> {:?}", &log_path);
+                        KvsError::IoError(e)
                     })?),
                 );
                 if log_id > latest_file_id {
@@ -139,8 +140,9 @@ impl BitcaskEngine {
             log_writer = OpenOptions::new()
                 .append(true)
                 .open(&write_log_path)
-                .with_context(|| {
-                    format!("[DB_INIT] Error while opening an existing mutable append log - log writer path -> {:?}", write_log_path)
+                .map_err(|e| {
+                    error!("[DB_INIT] Error while opening an existing mutable append log - log writer path -> {:?}", write_log_path);
+                    KvsError::IoError(e)
                 })?;
 
             // Replaying logs to recreate index
@@ -184,12 +186,14 @@ impl BitcaskEngine {
                 .create(true)
                 .append(true)
                 .open(&write_log_path)
-                .with_context(|| {
-                    format!("[DB_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path)
+                .map_err(|e| {
+                    error!("[DB_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path);
+                    KvsError::IoError(e)
                 })?;
             log_readers.insert(1, BufReader::new(File::open(&write_log_path)
-                .with_context(|| {
-                    format!("[DB_INIT] Error while creating a reader for the new mutable append log created - log reader path -> {:?}", write_log_path)
+                .map_err(|e| {
+                    error!("[DB_INIT] Error while creating a reader for the new mutable append log created - log reader path -> {:?}", write_log_path);
+                    KvsError::IoError(e)
                 })?));
             latest_file_id = 1;
         }
@@ -218,9 +222,8 @@ impl Engine for BitcaskEngine {
             timestamp: Local::now(),
         })?;
 
-        //TODO: dont unwrap the error
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().unwrap();
+        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
 
         if bitcask_store.log_writer.is_none() {
             bitcask_store.log_writer_init()?;
@@ -302,14 +305,13 @@ impl Engine for BitcaskEngine {
     fn remove(&self, key: String) -> Result<()> {
         // trace!(operation = "RM", key = key);
 
-        //TODO: dont unwrap the error
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().unwrap();
+        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
 
         bitcask_store
             .mem_index
             .remove(&key)
-            .ok_or_else(|| anyhow!(KvsError::KeyNotFoundError))?;
+            .ok_or_else(|| KvsError::KeyNotFoundError)?;
 
         let cmd = serialize_command(&LogEntry {
             key,
@@ -335,9 +337,8 @@ impl Engine for BitcaskEngine {
 
 impl BitcaskEngine {
     fn get_val_metadata(&self, key: String) -> Result<Option<(String, ValueMetadata)>> {
-        //TODO: dont unwrap the error
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().unwrap();
+        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
 
         if bitcask_store.log_readers.is_none() {
             bitcask_store.log_readers_init()?;
@@ -354,10 +355,10 @@ impl BitcaskEngine {
                     .unwrap()
                     .get_mut(&value_metadata.log_id)
                     .ok_or_else(|| {
-                        anyhow!(KvsError::LogReaderNotFoundError(format!(
+                        KvsError::LogReaderNotFoundError(format!(
                             "Log {} does not have a valid reader",
                             value_metadata.log_id
-                        )))
+                        ))
                     })?;
 
                 requested_log_reader.seek(SeekFrom::Start(value_metadata.log_pointer))?;
@@ -387,8 +388,9 @@ impl BitcaskStore {
                 fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&write_log_path).with_context(|| {
-                    format!("[LOG_WRITER_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path)
+                    .open(&write_log_path).map_err(|e| {
+                    error!("[LOG_WRITER_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path);
+                    KvsError::IoError(e)
                 })?
 
             );
@@ -400,8 +402,9 @@ impl BitcaskStore {
             let current_log_id = self.current_log_id;
             self.log_readers.as_mut().unwrap().insert(
                 current_log_id,
-                BufReader::new(fs::File::open(&write_log_path).with_context(|| {
-                    format!("[LOG_WRITER_INIT] Error while creating a reader for the new mutable append log - log reader path -> {:?}", write_log_path)
+                BufReader::new(fs::File::open(&write_log_path).map_err(|e| {
+                    error!("[LOG_WRITER_INIT] Error while creating a reader for the new mutable append log - log reader path -> {:?}", write_log_path);
+                    KvsError::IoError(e)
                 })?),
             );
         }
@@ -422,13 +425,14 @@ impl BitcaskStore {
                 let log_id = log_id_path
                     .strip_prefix(&self.logs_dir)?
                     .to_str()
-                    .ok_or(anyhow!(KvsError::CliError(String::from(
+                    .ok_or(KvsError::CliError(String::from(
                         "invalid log filename, {err}",
-                    ))))?
+                    )))?
                     .parse::<u64>()?;
 
-                readers.insert(log_id, BufReader::new(File::open(&log_path).with_context(|| {
-                    format!("[LOG_READERS_INIT] Error while creating a new reader - log reader path -> {:?}", &log_path)
+                readers.insert(log_id, BufReader::new(File::open(&log_path).map_err(|e| {
+                    error!("[LOG_READERS_INIT] Error while creating a new reader - log reader path -> {:?}", &log_path);
+                    KvsError::IoError(e)
                 })?));
             }
 

@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use sled;
 use tracing::error;
 
@@ -6,6 +5,7 @@ use std::path::Path;
 
 use super::{Engine, KvsError, Result, HOBBES_LOGS_PATH, SLED_DB_PATH};
 
+#[derive(Clone)]
 pub struct SledEngine {
     db: sled::Db,
 }
@@ -16,9 +16,9 @@ impl SledEngine {
         // Check if a sled-store already exists
         let hobbes_store_dir = logs_dir_arg.join(HOBBES_LOGS_PATH);
         if Path::is_dir(&hobbes_store_dir) {
-            Err(anyhow!(KvsError::CliError(String::from(
+            Err(KvsError::CliError(String::from(
                 "hobbes storage engine used previously, using the sled engine is an invalid operation",
-            ))))?
+            )))?
         }
 
         let logs_dir = logs_dir_arg.join(SLED_DB_PATH);
@@ -48,7 +48,7 @@ impl Engine for SledEngine {
                 self.db.flush()?;
                 Ok(())
             }
-            Err(err) => Err(anyhow!(KvsError::SledDbError(err))),
+            Err(err) => Err(KvsError::SledDbError(err)),
         }
     }
 
@@ -60,9 +60,9 @@ impl Engine for SledEngine {
                     self.db.flush()?;
                     Ok(())
                 }
-                None => Err(anyhow!(KvsError::KeyNotFoundError)),
+                None => Err(KvsError::KeyNotFoundError),
             },
-            Err(err) => Err(anyhow!(KvsError::SledDbError(err))),
+            Err(err) => Err(KvsError::SledDbError(err)),
         }
     }
 }

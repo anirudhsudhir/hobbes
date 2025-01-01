@@ -1,3 +1,7 @@
+#![allow(unused)]
+
+use std::thread;
+
 use super::Result;
 
 pub trait ThreadPool {
@@ -8,6 +12,7 @@ pub trait ThreadPool {
         F: FnOnce() + Send + 'static;
 }
 
+/// NaiveThreadPool is only used for learning and not practical purposes
 pub struct NaiveThreadPool {}
 
 pub struct SharedQueueThreadPool {}
@@ -15,7 +20,7 @@ pub struct SharedQueueThreadPool {}
 pub struct RayonThreadPool {}
 
 impl ThreadPool for NaiveThreadPool {
-    fn new(count: u32) -> Result<impl ThreadPool> {
+    fn new(_count: u32) -> Result<impl ThreadPool> {
         Ok(NaiveThreadPool {})
     }
 
@@ -23,6 +28,9 @@ impl ThreadPool for NaiveThreadPool {
     where
         F: FnOnce() + Send + 'static,
     {
+        thread::spawn(move || {
+            job();
+        });
     }
 }
 

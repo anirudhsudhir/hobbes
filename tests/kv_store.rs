@@ -1,8 +1,6 @@
-// use kvs::{BitcaskEngine, KvsEngine, Result};
-use anyhow::Result;
-
 use hobbes::engine::bitcask::BitcaskEngine;
 use hobbes::engine::Engine;
+use hobbes::Result;
 
 use std::sync::{Arc, Barrier};
 use std::thread;
