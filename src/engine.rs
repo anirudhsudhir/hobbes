@@ -8,16 +8,17 @@ use std::path::Path;
 
 use crate::thread_pool::{NaiveThreadPool, ThreadPool};
 
-use super::{KvsError, Result};
+use super::{HobbesError, Result};
 
 pub mod bitcask;
 pub mod sled_engine;
 
 const DB_PARENT_PATH: &str = "";
-const HOBBES_LOGS_PATH: &str = "hobbes-store/logs";
-const HOBBES_DB_PATH: &str = "hobbes-store/";
-const HOBBES_COMPACTED_LOGS_SUBPATH: &str = "compacted-logs/";
-const SLED_DB_PATH: &str = "sled-store";
+// Public as constants are accessed in benchmark.rs
+pub const BITCASK_DB_PATH: &str = "bitcask-store/";
+pub const SLED_DB_PATH: &str = "sled-store";
+const BITCASK_LOGS_PATH: &str = "bitcask-store/logs";
+const BITCASK_COMPACTED_LOGS_SUBPATH: &str = "compacted-logs/";
 
 pub trait Engine: Clone + Send + 'static {
     fn set(&self, key: String, value: String) -> Result<()>;
@@ -54,9 +55,9 @@ impl Engine for EngineType {
 
 pub fn start_server(addr: &str, engine: &str) -> Result<()> {
     let store: EngineType = match engine {
-        "hobbes" => EngineType::Bitcask(bitcask::BitcaskEngine::open(Path::new(&DB_PARENT_PATH))?),
+        "bitcask" => EngineType::Bitcask(bitcask::BitcaskEngine::open(Path::new(&DB_PARENT_PATH))?),
         "sled" => EngineType::Sled(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
-        _ => Err(KvsError::CliError(String::from("invalid engine")))?,
+        _ => Err(HobbesError::CliError(String::from("invalid engine")))?,
     };
 
     // The count is an unused variable, this naive threadpool implementation is for learning
@@ -151,7 +152,8 @@ fn req_handler(store: EngineType, mut tcp_stream: TcpStream, addr: String) {
         return;
     }
 
-    let mut resp = String::from("Success");
+    // let mut resp = String::from("Success");
+    let resp;
     match cmd {
         "GET" => match handle_get(store, msg) {
             Ok(res) => resp = res,
@@ -164,6 +166,8 @@ fn req_handler(store: EngineType, mut tcp_stream: TcpStream, addr: String) {
             if let Err(e) = handle_set(store, msg) {
                 error!("Failed to handle set command for request = {cmd_str}, error = {e}");
                 return;
+            } else {
+                resp = String::from("set successful");
             }
         }
         "RM" => match handle_rm(store, msg) {
@@ -197,7 +201,7 @@ fn req_handler(store: EngineType, mut tcp_stream: TcpStream, addr: String) {
 fn handle_get<'a>(store: EngineType, mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
     let key = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(HobbesError::CliError(String::from(
             "Missing key in GET command",
         )))?
         .trim();
@@ -215,13 +219,13 @@ fn handle_get<'a>(store: EngineType, mut msg: impl Iterator<Item = &'a str>) -> 
 fn handle_set<'a>(store: EngineType, mut msg: impl Iterator<Item = &'a str>) -> Result<()> {
     let key = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(HobbesError::CliError(String::from(
             "Missing key in SET command",
         )))?
         .trim();
     let val = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(HobbesError::CliError(String::from(
             "Missing value in SET command",
         )))?
         .trim();
@@ -236,7 +240,7 @@ fn handle_set<'a>(store: EngineType, mut msg: impl Iterator<Item = &'a str>) -> 
 fn handle_rm<'a>(store: EngineType, mut msg: impl Iterator<Item = &'a str>) -> Result<String> {
     let key = msg
         .next()
-        .ok_or(KvsError::CliError(String::from(
+        .ok_or(HobbesError::CliError(String::from(
             "Missing key in RM command",
         )))?
         .trim();
@@ -248,7 +252,7 @@ fn handle_rm<'a>(store: EngineType, mut msg: impl Iterator<Item = &'a str>) -> R
             Ok(String::from("Success"))
         }
         Err(err) => match err {
-            KvsError::KeyNotFoundError => {
+            HobbesError::KeyNotFoundError => {
                 info!(cmd = "RM", key = key, "Key not found");
                 Ok(String::from("Key not found"))
             }

@@ -22,11 +22,9 @@ Usage: hobbes-server [OPTIONS]
 
 Options:
       --addr <addr>      set the server endpoint [default: 127.0.0.1:4000]
-      --engine <engine>  set the storage engine [default: hobbes] [possible values: hobbes, sled]
+      --engine <engine>  set the storage engine [default: bitcask] [possible values: bitcask, sled]
   -h, --help             Print help
   -V, --version          Print version
-
-hobbes-server
 ```
 
 - Use the client to issue commands to the server
@@ -77,7 +75,7 @@ The default logging level is INFO
 
 Hobbes offers pluggable storage backends. Currently, there are two choices:
 
-- hobbes: The default engine with a Bitcask-like architecture, built from scratch
+- bitcask: The default engine with a Bitcask architecture, built from scratch
 - sled: An alternate production engine with features such as ACID transactions ([Github](https://github.com/spacejam/sled))
 
 ## Client-server architecture
@@ -97,6 +95,6 @@ The command and arguments are separated and terminated by a carriage return line
 
 ## Benchmarks
 
-A benchmark of the hobbes and sled storage engines with 500 keys of variable sizes and a compaction threshold of 1 mb (the compaction is triggered when the log size exceeds 1 mb).
+A benchmark of the bitcask and sled storage engines with 500 keys of variable sizes and a compaction threshold of 1 mb (the compaction is triggered when the log size exceeds 1 mb).
 
-![Benchmark hobbes and sled with 500 keys and a compaction threshold of 1 mb](.github/img/bench_500keys_compaction_1mb.png)
+![Benchmark bitcask and sled with 500 keys and a compaction threshold of 1 mb](.github/img/bench_500keys_compaction_1mb.png)

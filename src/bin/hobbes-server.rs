@@ -6,7 +6,7 @@ use std::env;
 use std::io;
 
 use hobbes::engine;
-use hobbes::{KvsError, Result};
+use hobbes::{HobbesError, Result};
 
 fn main() -> Result<()> {
     let logging_level = match env::var("LOG_LEVEL") {
@@ -43,18 +43,18 @@ fn main() -> Result<()> {
             Arg::new("engine")
                 .help("set the storage engine")
                 .long("engine")
-                .default_value("hobbes")
+                .default_value("bitcask")
                 .num_args(1)
-                .value_parser(["hobbes", "sled"]),
+                .value_parser(["bitcask", "sled"]),
         )
         .get_matches();
 
     let addr = command
         .get_one::<String>("addr")
-        .ok_or_else(|| KvsError::CliError(String::from("failed to parse argument \"addr\"")))?;
-    let engine = command
-        .get_one::<String>("engine")
-        .ok_or_else(|| KvsError::CliError(String::from("failed to parse argument \"engine\"")))?;
+        .ok_or_else(|| HobbesError::CliError(String::from("failed to parse argument \"addr\"")))?;
+    let engine = command.get_one::<String>("engine").ok_or_else(|| {
+        HobbesError::CliError(String::from("failed to parse argument \"engine\""))
+    })?;
 
     println!(
         r"

@@ -174,7 +174,7 @@ fn server_cli_version() {
 
 #[test]
 fn cli_wrong_engine() {
-    // sled first, hobbes second
+    // sled first, bitcask second
     {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
@@ -187,18 +187,18 @@ fn cli_wrong_engine() {
         child.kill().expect("server exited before killed");
 
         let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
-        cmd.args(&["--engine", "hobbes", "--addr", "127.0.0.1:4003"])
+        cmd.args(&["--engine", "bitcask", "--addr", "127.0.0.1:4003"])
             .current_dir(&temp_dir)
             .assert()
             .failure();
     }
 
-    // hobbes first, sled second
+    // bitcask first, sled second
     {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("hobbes-server").unwrap();
         let mut child = cmd
-            .args(&["--engine", "hobbes", "--addr", "127.0.0.1:4002"])
+            .args(&["--engine", "bitcask", "--addr", "127.0.0.1:4002"])
             .current_dir(&temp_dir)
             .spawn()
             .unwrap();
@@ -328,7 +328,7 @@ fn cli_access_server(engine: &str, addr: &str) {
 
 #[test]
 fn cli_access_server_hobbes_engine() {
-    cli_access_server("hobbes", "127.0.0.1:4004");
+    cli_access_server("bitcask", "127.0.0.1:4004");
 }
 
 // This test passes locally but fails in Github CI

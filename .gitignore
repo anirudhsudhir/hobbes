@@ -5,7 +5,7 @@ hobbes-server
 hobbes-client
 
 store/
-hobbes-store/
+bitcask-store/
 sled-store/
 bench-db/
 
