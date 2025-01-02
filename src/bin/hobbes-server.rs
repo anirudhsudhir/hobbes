@@ -1,5 +1,3 @@
-use anyhow::anyhow;
-use anyhow::Result;
 use clap::{Arg, Command};
 use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
@@ -7,8 +5,8 @@ use tracing_subscriber::FmtSubscriber;
 use std::env;
 use std::io;
 
-use hobbes_kv::engine;
-use hobbes_kv::KvsError;
+use hobbes::engine;
+use hobbes::{HobbesError, Result};
 
 fn main() -> Result<()> {
     let logging_level = match env::var("LOG_LEVEL") {
@@ -45,21 +43,17 @@ fn main() -> Result<()> {
             Arg::new("engine")
                 .help("set the storage engine")
                 .long("engine")
-                .default_value("hobbes")
+                .default_value("bitcask")
                 .num_args(1)
-                .value_parser(["hobbes", "sled"]),
+                .value_parser(["bitcask", "sled"]),
         )
         .get_matches();
 
-    let addr = command.get_one::<String>("addr").ok_or_else(|| {
-        anyhow!(KvsError::CliError(String::from(
-            "failed to parse argument \"addr\""
-        )))
-    })?;
+    let addr = command
+        .get_one::<String>("addr")
+        .ok_or_else(|| HobbesError::CliError(String::from("failed to parse argument \"addr\"")))?;
     let engine = command.get_one::<String>("engine").ok_or_else(|| {
-        anyhow!(KvsError::CliError(String::from(
-            "failed to parse argument \"engine\""
-        )))
+        HobbesError::CliError(String::from("failed to parse argument \"engine\""))
     })?;
 
     println!(
