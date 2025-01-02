@@ -9,13 +9,13 @@ bench:
 	ulimit -n 50000
 	cargo bench
 view_logs:
-	ls -la hobbes-store
-	ls -la hobbes-store/logs
-	find hobbes-store/logs -type f -exec sh -c 'echo "Hex dump of file: {}"; xxd "{}"' \;
+	ls -la bitcask-store
+	ls -la bitcask-store/logs
+	find bitcask-store/logs -type f -exec sh -c 'echo "Hex dump of file: {}"; xxd "{}"' \;
 compaction_demo:
 	i=0
 	for ((; i < 300; i++)); do \
   	./hobbes set foo "bar_$$i" ; \
 	done
 clean:
-	rm -rf hobbes-store/ bench-db/ hobbes hobbes-server
+	rm -rf bitcask-store/ bench-db/ hobbes hobbes-server

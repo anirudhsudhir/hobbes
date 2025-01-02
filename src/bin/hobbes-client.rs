@@ -4,11 +4,11 @@ use tracing_subscriber::fmt::time;
 use tracing_subscriber::FmtSubscriber;
 
 use std::env;
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::process;
 
-use hobbes::{KvsError, Result};
+use hobbes::{HobbesError, Result};
 
 fn main() -> Result<()> {
     let logging_level = match env::var("LOG_LEVEL") {
@@ -36,14 +36,14 @@ fn main() -> Result<()> {
 
     let addr = cmd
         .get_one::<String>("addr")
-        .ok_or_else(|| KvsError::CliError(String::from("failed to parse argument \"addr\"")))?
+        .ok_or_else(|| HobbesError::CliError(String::from("failed to parse argument \"addr\"")))?
         .to_string();
 
     match cmd.subcommand() {
         Some(("get", sub_matches)) => {
             let key = sub_matches
                 .get_one::<String>("get")
-                .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
+                .ok_or_else(|| HobbesError::CliError(String::from("Unable to parse arguments")))?;
 
             let cmd = format!("GET\r\n{key}\r\n");
             let resp = send_cmd(cmd, addr)?;
@@ -55,10 +55,10 @@ fn main() -> Result<()> {
 
         Some(("set", sub_matches)) => {
             let mut args = sub_matches.get_many::<String>("set").into_iter().flatten();
-            let key = args.next().ok_or(KvsError::CliError(String::from(
+            let key = args.next().ok_or(HobbesError::CliError(String::from(
                 "Missing key in SET command",
             )))?;
-            let val = args.next().ok_or(KvsError::CliError(String::from(
+            let val = args.next().ok_or(HobbesError::CliError(String::from(
                 "Missing value in SET command",
             )))?;
 
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
         Some(("rm", sub_matches)) => {
             let key = sub_matches
                 .get_one::<String>("rm")
-                .ok_or_else(|| KvsError::CliError(String::from("Unable to parse arguments")))?;
+                .ok_or_else(|| HobbesError::CliError(String::from("Unable to parse arguments")))?;
             let cmd = format!("RM\r\n{key}\r\n");
             let resp = send_cmd(cmd, addr)?;
             if resp == "Key not found" {
@@ -144,13 +144,11 @@ fn cli() -> Command {
 }
 
 fn send_cmd(cmd_to_send: String, addr: String) -> Result<String> {
-    let stream = TcpStream::connect(&addr)?;
-    let mut writer = BufWriter::new(&stream);
+    let mut tcp_client = TcpStream::connect(&addr)?;
 
     // Prepending the command length and sending to server
     let cmd = format!("{}\r\n{cmd_to_send}", cmd_to_send.len());
-    writer.write_all(cmd.as_bytes())?;
-    writer.flush()?;
+    tcp_client.write_all(cmd.as_bytes())?;
     trace!(
         cmd = cmd,
         cmd_bytes = cmd.len(),
@@ -160,8 +158,7 @@ fn send_cmd(cmd_to_send: String, addr: String) -> Result<String> {
 
     // Reading the client response
     let mut resp = String::new();
-    let mut reader = BufReader::new(&stream);
-    reader.read_line(&mut resp)?;
+    tcp_client.read_to_string(&mut resp)?;
 
     trace!(
         cmd = cmd,

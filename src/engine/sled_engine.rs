@@ -3,7 +3,7 @@ use tracing::error;
 
 use std::path::Path;
 
-use super::{Engine, KvsError, Result, HOBBES_LOGS_PATH, SLED_DB_PATH};
+use super::{Engine, HobbesError, Result, BITCASK_LOGS_PATH, SLED_DB_PATH};
 
 #[derive(Clone)]
 pub struct SledEngine {
@@ -14,10 +14,10 @@ impl SledEngine {
     /// Open an instance of SledEngine at the specified directory
     pub fn open(logs_dir_arg: &Path) -> Result<SledEngine> {
         // Check if a sled-store already exists
-        let hobbes_store_dir = logs_dir_arg.join(HOBBES_LOGS_PATH);
-        if Path::is_dir(&hobbes_store_dir) {
-            Err(KvsError::CliError(String::from(
-                "hobbes storage engine used previously, using the sled engine is an invalid operation",
+        let bitcask_store_dir = logs_dir_arg.join(BITCASK_LOGS_PATH);
+        if Path::is_dir(&bitcask_store_dir) {
+            Err(HobbesError::CliError(String::from(
+                "bitcask storage engine used previously, using the sled engine is an invalid operation",
             )))?
         }
 
@@ -48,7 +48,7 @@ impl Engine for SledEngine {
                 self.db.flush()?;
                 Ok(())
             }
-            Err(err) => Err(KvsError::SledDbError(err)),
+            Err(err) => Err(HobbesError::SledDbError(err)),
         }
     }
 
@@ -60,9 +60,9 @@ impl Engine for SledEngine {
                     self.db.flush()?;
                     Ok(())
                 }
-                None => Err(KvsError::KeyNotFoundError),
+                None => Err(HobbesError::KeyNotFoundError),
             },
-            Err(err) => Err(KvsError::SledDbError(err)),
+            Err(err) => Err(HobbesError::SledDbError(err)),
         }
     }
 }

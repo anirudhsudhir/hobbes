@@ -14,7 +14,7 @@ const MUTEX_LOCK_ERROR: &str = "Failed to lock mutex";
 
 /// Error Types for the store
 #[derive(Debug)]
-pub enum KvsError {
+pub enum HobbesError {
     /// Indicates I/O errors
     IoError(io::Error),
     /// Indicates errors while serializing commands to be stored in the on-disk log
@@ -43,69 +43,71 @@ pub enum KvsError {
 }
 
 /// Result type for the store
-pub type Result<T> = std::result::Result<T, KvsError>;
+pub type Result<T> = std::result::Result<T, HobbesError>;
 
-impl fmt::Display for KvsError {
+impl fmt::Display for HobbesError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            KvsError::IoError(ref err) => write!(f, "IO error: {}", err),
-            KvsError::SerializationError(ref err) => write!(f, "Serialization error: {}", err),
-            KvsError::DeserializationError(ref err) => write!(f, "Deserialization error: {}", err),
-            KvsError::KeyNotFoundError => write!(f, "Key not found",),
-            KvsError::CliError(ref err) => write!(f, "CLI Error: {}", err),
-            KvsError::CompactionError(ref err) => write!(f, "Compaction Error: {}", err),
-            KvsError::StripPrefixError(ref err) => write!(f, "Strip Prefix Error: {}", err),
-            KvsError::ParseIntError(ref err) => write!(f, "Parse Int Error: {}", err),
-            KvsError::LogReaderNotFoundError(ref err) => {
+            HobbesError::IoError(ref err) => write!(f, "IO error: {}", err),
+            HobbesError::SerializationError(ref err) => write!(f, "Serialization error: {}", err),
+            HobbesError::DeserializationError(ref err) => {
+                write!(f, "Deserialization error: {}", err)
+            }
+            HobbesError::KeyNotFoundError => write!(f, "Key not found",),
+            HobbesError::CliError(ref err) => write!(f, "CLI Error: {}", err),
+            HobbesError::CompactionError(ref err) => write!(f, "Compaction Error: {}", err),
+            HobbesError::StripPrefixError(ref err) => write!(f, "Strip Prefix Error: {}", err),
+            HobbesError::ParseIntError(ref err) => write!(f, "Parse Int Error: {}", err),
+            HobbesError::LogReaderNotFoundError(ref err) => {
                 write!(f, "Log Reader Not Found Error: {}", err)
             }
-            KvsError::SetGlobalDefaultError(ref err) => {
+            HobbesError::SetGlobalDefaultError(ref err) => {
                 write!(f, "Set Global Default Error: {}", err)
             }
-            KvsError::SledDbError(ref err) => write!(f, "Sled Engine Error: {}", err),
-            KvsError::NetworkError(ref err) => write!(f, "Network Error: {}", err),
+            HobbesError::SledDbError(ref err) => write!(f, "Sled Engine Error: {}", err),
+            HobbesError::NetworkError(ref err) => write!(f, "Network Error: {}", err),
         }
     }
 }
 
-impl From<std::io::Error> for KvsError {
+impl From<std::io::Error> for HobbesError {
     fn from(value: std::io::Error) -> Self {
-        KvsError::IoError(value)
+        HobbesError::IoError(value)
     }
 }
 
-impl From<encode::Error> for KvsError {
+impl From<encode::Error> for HobbesError {
     fn from(value: encode::Error) -> Self {
-        KvsError::SerializationError(value)
+        HobbesError::SerializationError(value)
     }
 }
 
-impl From<decode::Error> for KvsError {
+impl From<decode::Error> for HobbesError {
     fn from(value: decode::Error) -> Self {
-        KvsError::DeserializationError(value)
+        HobbesError::DeserializationError(value)
     }
 }
 
-impl From<path::StripPrefixError> for KvsError {
+impl From<path::StripPrefixError> for HobbesError {
     fn from(value: path::StripPrefixError) -> Self {
-        KvsError::StripPrefixError(value)
+        HobbesError::StripPrefixError(value)
     }
 }
 
-impl From<num::ParseIntError> for KvsError {
+impl From<num::ParseIntError> for HobbesError {
     fn from(value: num::ParseIntError) -> Self {
-        KvsError::ParseIntError(value)
+        HobbesError::ParseIntError(value)
     }
 }
 
-impl From<subscriber::SetGlobalDefaultError> for KvsError {
+impl From<subscriber::SetGlobalDefaultError> for HobbesError {
     fn from(value: subscriber::SetGlobalDefaultError) -> Self {
-        KvsError::SetGlobalDefaultError(value)
+        HobbesError::SetGlobalDefaultError(value)
     }
 }
 
-impl From<sled::Error> for KvsError {
+impl From<sled::Error> for HobbesError {
     fn from(value: sled::Error) -> Self {
-        KvsError::SledDbError(value)
+        HobbesError::SledDbError(value)
     }
 }
