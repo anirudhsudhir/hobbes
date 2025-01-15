@@ -6,7 +6,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use crate::engine::BITCASK_COMPACTED_LOGS_SUBPATH;
-use crate::{HobbesError, MUTEX_LOCK_ERROR};
+use crate::{HobbesError, RWLOCK_ERROR};
 
 use super::{serialize_command, BitcaskEngine, LogEntry, Result, ValueMetadata, LOG_EXTENSION};
 
@@ -15,14 +15,12 @@ const MAX_FILE_SIZE: u64 = 1000000;
 impl BitcaskEngine {
     pub fn compaction_manager(&self) -> Result<()> {
         debug!(operation = "COMPACTION");
+        self.log_writer_init()?;
 
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
+        let bitcask_store = store_mutex.read().expect(RWLOCK_ERROR);
 
-        if bitcask_store.log_writer.is_none() {
-            bitcask_store.log_writer_init()?;
-        }
-        let writer_len = bitcask_store.log_writer.as_mut().unwrap().metadata()?.len();
+        let writer_len = bitcask_store.log_writer.as_ref().unwrap().metadata()?.len();
         if writer_len < MAX_FILE_SIZE {
             return Ok(());
         }
@@ -119,7 +117,7 @@ impl BitcaskEngine {
         // TODO: Make these operations atomic
         // TODO: Handle failure when renaming compacted logs and DB crashes
 
-        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
+        let mut bitcask_store = store_mutex.write().expect(RWLOCK_ERROR);
 
         bitcask_store.log_readers = None;
         // Ignoring error as directory may not exist

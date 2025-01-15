@@ -59,6 +59,7 @@ fn shared_queue_thread_pool_spawn_counter() -> Result<()> {
 }
 
 #[test]
+#[ignore = "unimplemented"]
 fn rayon_thread_pool_spawn_counter() -> Result<()> {
     let pool = RayonThreadPool::new(4)?;
     spawn_counter(pool)

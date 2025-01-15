@@ -1,12 +1,12 @@
 use bitcask::BitcaskEngine;
 use sled_engine::SledEngine;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 
-use crate::thread_pool::{NaiveThreadPool, ThreadPool};
+use crate::thread_pool::{SharedQueueThreadPool, ThreadPool};
 
 use super::{HobbesError, Result};
 
@@ -19,6 +19,11 @@ pub const BITCASK_DB_PATH: &str = "bitcask-store/";
 pub const SLED_DB_PATH: &str = "sled-store";
 const BITCASK_LOGS_PATH: &str = "bitcask-store/logs";
 const BITCASK_COMPACTED_LOGS_SUBPATH: &str = "compacted-logs/";
+
+pub struct Server<P: ThreadPool> {
+    store: EngineType,
+    pool: P,
+}
 
 pub trait Engine: Clone + Send + 'static {
     fn set(&self, key: String, value: String) -> Result<()>;
@@ -54,22 +59,29 @@ impl Engine for EngineType {
 }
 
 pub fn start_server(addr: &str, engine: &str) -> Result<()> {
-    let store: EngineType = match engine {
-        "bitcask" => EngineType::Bitcask(bitcask::BitcaskEngine::open(Path::new(&DB_PARENT_PATH))?),
-        "sled" => EngineType::Sled(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
-        _ => Err(HobbesError::CliError(String::from("invalid engine")))?,
+    trace!("Server starting");
+    let server = Server {
+        store: match engine {
+            "bitcask" => {
+                EngineType::Bitcask(bitcask::BitcaskEngine::open(Path::new(&DB_PARENT_PATH))?)
+            }
+            "sled" => EngineType::Sled(sled_engine::SledEngine::open(Path::new(&DB_PARENT_PATH))?),
+            _ => Err(HobbesError::CliError(String::from("invalid engine")))?,
+        },
+        pool: SharedQueueThreadPool::new(num_cpus::get() as u32)?,
     };
 
-    // The count is an unused variable, this naive threadpool implementation is for learning
-    // purposes
-    let naive_thread_pool = NaiveThreadPool::new(0)?;
-
+    trace!("Listener starting");
     let listener = TcpListener::bind(addr)?;
+    trace!("Listener started");
 
     for tcp_stream in listener.incoming().flatten() {
         let addr_clone = addr.to_owned();
-        let store_clone = store.clone();
-        naive_thread_pool.spawn(move || req_handler(store_clone, tcp_stream, addr_clone))
+        let store_clone = server.store.clone();
+
+        server.pool.spawn(move || {
+            req_handler(store_clone, tcp_stream, addr_clone);
+        });
     }
 
     Ok(())

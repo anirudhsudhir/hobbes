@@ -10,7 +10,9 @@ use std::{fmt, io, num, path};
 pub mod engine;
 pub mod thread_pool;
 
-const MUTEX_LOCK_ERROR: &str = "Failed to lock mutex";
+const RWLOCK_ERROR: &str = "Failed to lock RwLock";
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 /// Error Types for the store
 #[derive(Debug)]
@@ -38,8 +40,10 @@ pub enum HobbesError {
     SetGlobalDefaultError(subscriber::SetGlobalDefaultError),
     /// Indicates errors arising from the sled Db type
     SledDbError(sled::Error),
-    //// Indicates errors arising during network communication between server and client
+    /// Indicates errors arising during network communication between server and client
     NetworkError(String),
+    /// Indicates errors while sending types over a channel
+    ChannelSendError(String),
 }
 
 /// Result type for the store
@@ -66,6 +70,7 @@ impl fmt::Display for HobbesError {
             }
             HobbesError::SledDbError(ref err) => write!(f, "Sled Engine Error: {}", err),
             HobbesError::NetworkError(ref err) => write!(f, "Network Error: {}", err),
+            HobbesError::ChannelSendError(ref err) => write!(f, "Channel Send Error: {}", err),
         }
     }
 }
