@@ -22,6 +22,8 @@ tracing-subscriber = { version = "0.3.18", features = ["std", "chrono", "fmt"] }
 sled = "0.34.7"
 rand = "0.8.5"
 chrono = { version = "0.4.39", features = ["serde"] }
+num_cpus = "1.16.0"
+crossbeam = "0.8.4"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"

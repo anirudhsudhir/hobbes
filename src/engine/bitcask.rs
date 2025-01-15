@@ -10,10 +10,10 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use crate::engine::BITCASK_DB_PATH;
-use crate::MUTEX_LOCK_ERROR;
+use crate::RWLOCK_ERROR;
 
 use super::{Engine, HobbesError, Result, BITCASK_LOGS_PATH, SLED_DB_PATH};
 
@@ -49,7 +49,7 @@ struct ValueMetadata {
 
 #[derive(Clone)]
 pub struct BitcaskEngine {
-    store: Arc<Mutex<BitcaskStore>>,
+    store: Arc<RwLock<BitcaskStore>>,
 }
 
 const TOMBSTONE: &str = "!tomb!";
@@ -199,7 +199,7 @@ impl BitcaskEngine {
         }
 
         Ok(BitcaskEngine {
-            store: Arc::new(Mutex::new(BitcaskStore {
+            store: Arc::new(RwLock::new(BitcaskStore {
                 mem_index,
                 logs_dir,
                 db_dir,
@@ -209,12 +209,98 @@ impl BitcaskEngine {
             })),
         })
     }
+
+    fn log_writer_init(&self) -> Result<()> {
+        let store_mutex = self.store.clone();
+        let bitcask_writer_none = store_mutex.read().expect(RWLOCK_ERROR).log_writer.is_none();
+
+        if bitcask_writer_none {
+            trace!(operation = "LOG_WRITER_INIT");
+
+            let mut bitcask_store = store_mutex.write().expect(RWLOCK_ERROR);
+
+            let write_log_path = bitcask_store.logs_dir.join(PathBuf::from(format!(
+                "{}{LOG_EXTENSION}",
+                bitcask_store.current_log_id
+            )));
+
+            bitcask_store.log_writer = Some(
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&write_log_path).map_err(|e| {
+                    error!("[LOG_WRITER_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path);
+                    HobbesError::IoError(e)
+                })?
+
+            );
+
+            let bitcask_readers_none = bitcask_store.log_readers.is_none();
+
+            if bitcask_readers_none {
+                drop(bitcask_store);
+                self.log_readers_init()?;
+            }
+
+            let mut bitcask_store = store_mutex.write().expect(RWLOCK_ERROR);
+
+            let current_log_id = bitcask_store.current_log_id;
+            bitcask_store.log_readers.as_mut().unwrap().insert(
+                current_log_id,
+                BufReader::new(fs::File::open(&write_log_path).map_err(|e| {
+                    error!("[LOG_WRITER_INIT] Error while creating a reader for the new mutable append log - log reader path -> {:?}", write_log_path);
+                    HobbesError::IoError(e)
+                })?),
+            );
+        }
+
+        Ok(())
+    }
+
+    fn log_readers_init(&self) -> Result<()> {
+        let store_clone = self.store.clone();
+        let bitcask_readers_none = store_clone
+            .read()
+            .expect(RWLOCK_ERROR)
+            .log_readers
+            .is_none();
+
+        if bitcask_readers_none {
+            trace!(operation = "LOG_READERS_INIT");
+
+            let mut bitcask_store = store_clone.write().expect(RWLOCK_ERROR);
+
+            let mut readers = HashMap::new();
+            for entry in fs::read_dir(&bitcask_store.logs_dir)? {
+                let log_path = entry?.path();
+                let mut log_id_path = log_path.clone();
+                log_id_path.set_extension("");
+
+                let log_id = log_id_path
+                    .strip_prefix(&bitcask_store.logs_dir)?
+                    .to_str()
+                    .ok_or(HobbesError::CliError(String::from(
+                        "invalid log filename, {err}",
+                    )))?
+                    .parse::<u64>()?;
+
+                readers.insert(log_id, BufReader::new(File::open(&log_path).map_err(|e| {
+                    error!("[LOG_READERS_INIT] Error while creating a new reader - log reader path -> {:?}", &log_path);
+                    HobbesError::IoError(e)
+                })?));
+            }
+
+            bitcask_store.log_readers = Some(readers);
+        }
+        Ok(())
+    }
 }
 
 impl Engine for BitcaskEngine {
     /// Store a key-value pair
     fn set(&self, key: String, value: String) -> Result<()> {
         trace!(operation = "SET", key = key, value = value);
+        self.log_writer_init()?;
 
         let cmd = serialize_command(&LogEntry {
             key: key.clone(),
@@ -223,11 +309,7 @@ impl Engine for BitcaskEngine {
         })?;
 
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
-
-        if bitcask_store.log_writer.is_none() {
-            bitcask_store.log_writer_init()?;
-        }
+        let mut bitcask_store = store_mutex.write().expect(RWLOCK_ERROR);
 
         let log_writer = bitcask_store.log_writer.as_mut().unwrap();
 
@@ -304,9 +386,10 @@ impl Engine for BitcaskEngine {
     /// ```
     fn remove(&self, key: String) -> Result<()> {
         // trace!(operation = "RM", key = key);
+        self.log_writer_init()?;
 
         let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
+        let mut bitcask_store = store_mutex.write().expect(RWLOCK_ERROR);
 
         bitcask_store
             .mem_index
@@ -318,10 +401,6 @@ impl Engine for BitcaskEngine {
             val: TOMBSTONE.to_string(),
             timestamp: Local::now(),
         })?;
-
-        if bitcask_store.log_writer.is_none() {
-            bitcask_store.log_writer_init()?;
-        }
 
         let log_writer = bitcask_store.log_writer.as_mut().unwrap();
         let offset = log_writer.metadata()?.len();
@@ -337,12 +416,11 @@ impl Engine for BitcaskEngine {
 
 impl BitcaskEngine {
     fn get_val_metadata(&self, key: String) -> Result<Option<(String, ValueMetadata)>> {
-        let store_mutex = self.store.clone();
-        let mut bitcask_store = store_mutex.lock().expect(MUTEX_LOCK_ERROR);
+        self.log_readers_init()?;
 
-        if bitcask_store.log_readers.is_none() {
-            bitcask_store.log_readers_init()?;
-        }
+        let store_mutex = self.store.clone();
+        let mut bitcask_store = store_mutex.write().expect(RWLOCK_ERROR);
+
         let value_metadata_opt = bitcask_store.mem_index.get(&key);
 
         match value_metadata_opt {
@@ -371,74 +449,6 @@ impl BitcaskEngine {
             }
             None => Ok(None),
         }
-    }
-}
-
-impl BitcaskStore {
-    fn log_writer_init(&mut self) -> Result<()> {
-        if self.log_writer.is_none() {
-            trace!(operation = "LOG_WRITER_INIT");
-
-            let write_log_path = self.logs_dir.join(PathBuf::from(format!(
-                "{}{LOG_EXTENSION}",
-                self.current_log_id
-            )));
-
-            self.log_writer = Some(
-                fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&write_log_path).map_err(|e| {
-                    error!("[LOG_WRITER_INIT] Error while creating a new mutable append log - log writer path -> {:?}", write_log_path);
-                    HobbesError::IoError(e)
-                })?
-
-            );
-
-            if self.log_readers.is_none() {
-                self.log_readers_init()?;
-            }
-
-            let current_log_id = self.current_log_id;
-            self.log_readers.as_mut().unwrap().insert(
-                current_log_id,
-                BufReader::new(fs::File::open(&write_log_path).map_err(|e| {
-                    error!("[LOG_WRITER_INIT] Error while creating a reader for the new mutable append log - log reader path -> {:?}", write_log_path);
-                    HobbesError::IoError(e)
-                })?),
-            );
-        }
-
-        Ok(())
-    }
-
-    fn log_readers_init(&mut self) -> Result<()> {
-        if self.log_readers.is_none() {
-            trace!(operation = "LOG_READERS_INIT");
-
-            let mut readers = HashMap::new();
-            for entry in fs::read_dir(&self.logs_dir)? {
-                let log_path = entry?.path();
-                let mut log_id_path = log_path.clone();
-                log_id_path.set_extension("");
-
-                let log_id = log_id_path
-                    .strip_prefix(&self.logs_dir)?
-                    .to_str()
-                    .ok_or(HobbesError::CliError(String::from(
-                        "invalid log filename, {err}",
-                    )))?
-                    .parse::<u64>()?;
-
-                readers.insert(log_id, BufReader::new(File::open(&log_path).map_err(|e| {
-                    error!("[LOG_READERS_INIT] Error while creating a new reader - log reader path -> {:?}", &log_path);
-                    HobbesError::IoError(e)
-                })?));
-            }
-
-            self.log_readers = Some(readers);
-        }
-        Ok(())
     }
 }
 
